@@ -744,35 +744,32 @@ function OrderDetail({ orderId, can, onDone }) {
 /* --------------------------- الحسابات --------------------------- */
 
 function LocationPicker({ value, onChange }) {
-  function pick(e) {
-    const r = e.currentTarget.getBoundingClientRect();
-    const xPct = ((e.clientX - r.left) / r.width) * 100;
-    const yPct = ((e.clientY - r.top) / r.height) * 100;
-    onChange({
-      lat: Number((32.93 - (yPct / 100) * 0.18).toFixed(5)),
-      lng: Number((13.08 + (xPct / 100) * 0.26).toFixed(5)),
-      xPct, yPct,
+  const TRIPOLI_CENTER = [32.8872, 13.1913];
+
+  function ClickHandler() {
+    useMapEvents({
+      click(e) {
+        onChange({ lat: Number(e.latlng.lat.toFixed(5)), lng: Number(e.latlng.lng.toFixed(5)) });
+      },
     });
+    return null;
   }
+
   return (
     <div className="map-picker-wrap">
-      <div className="map-picker" onClick={pick} role="button" tabIndex={0}>
-        <svg viewBox="0 0 400 260" className="map-svg" preserveAspectRatio="none">
-          <rect width="400" height="260" fill="#e8e4d8" />
-          <path d="M0 150 Q100 140 200 152 T400 148 L400 260 L0 260 Z" fill="#cfe0e6" />
-          <g stroke="#c9c2ae" strokeWidth="7" strokeLinecap="round">
-            <line x1="40" y1="0" x2="60" y2="150" /><line x1="150" y1="0" x2="160" y2="150" />
-            <line x1="270" y1="0" x2="255" y2="150" /><line x1="0" y1="55" x2="400" y2="48" />
-            <line x1="0" y1="110" x2="400" y2="118" />
-          </g>
-          <g fill="#bcb5a0">
-            <rect x="72" y="62" width="62" height="38" /><rect x="176" y="58" width="66" height="44" />
-            <rect x="278" y="66" width="56" height="36" />
-          </g>
-          <text x="200" y="30" textAnchor="middle" fontSize="13" fill="#8a8470">طرابلس</text>
-          <text x="200" y="215" textAnchor="middle" fontSize="12" fill="#7c94a0">البحر المتوسط</text>
-        </svg>
-        {value && <div className="map-pin" style={{ left: `${value.xPct}%`, top: `${value.yPct}%` }}><MapPin size={26} /></div>}
+      <div className="map-picker">
+        <MapContainer
+          center={value ? [value.lat, value.lng] : TRIPOLI_CENTER}
+          zoom={value ? 15 : 12}
+          style={{ height: "250px", width: "100%" }}
+        >
+          <TileLayer
+            attribution='&copy; OpenStreetMap contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <ClickHandler />
+          {value && <Marker position={[value.lat, value.lng]} icon={markerIcon} />}
+        </MapContainer>
         {!value && <div className="map-hint">اضغط على الخريطة لتحديد الموقع</div>}
       </div>
       {value && (
