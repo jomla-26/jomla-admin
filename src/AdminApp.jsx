@@ -789,6 +789,7 @@ function AccountsView({ can }) {
   const [query, setQuery] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editAccount, setEditAccount] = useState(null);
 
   const sectionsList = useFetch(() => api.sections(), []);
   const { data, loading, error, reload } = useFetch(
@@ -803,9 +804,9 @@ function AccountsView({ can }) {
       <div className="toolbar-row">
         <div className="chip-row">
           <button className={"chip" + (tab === "customers" ? " chip-active" : "")}
-            onClick={() => { setTab("customers"); setEditingId(null); }}>العملاء</button>
+            onClick={() => { setTab("customers"); setEditingId(null); setEditAccount(null); }}>العملاء</button>
           <button className={"chip" + (tab === "suppliers" ? " chip-active" : "")}
-            onClick={() => { setTab("suppliers"); setEditingId(null); }}>الموردون</button>
+            onClick={() => { setTab("suppliers"); setEditingId(null); setEditAccount(null); }}>الموردون</button>
           <button className={"chip" + (status === "all" ? " chip-active" : "")} onClick={() => setStatus("all")}>الكل</button>
           <button className={"chip" + (status === "pending" ? " chip-active" : "")} onClick={() => setStatus("pending")}>
             بانتظار الاعتماد
@@ -823,6 +824,11 @@ function AccountsView({ can }) {
       {showAdd && (
         <AddAccountForm kind={kind} sections={sectionsList.data ?? []}
           onClose={() => setShowAdd(false)} onDone={reload} />
+      )}
+
+      {editAccount && (
+        <EditAccountForm kind={kind} account={editAccount}
+          onClose={() => setEditAccount(null)} onDone={reload} />
       )}
 
       {status === "all" && pendingCount > 0 && (
@@ -854,11 +860,21 @@ function AccountsView({ can }) {
                       </span>
                     </td>
                     <td>
-                      {can("accounts.sections") && (
-                        <button className="invoice-action-btn" onClick={() => setEditingId(editingId === a.id ? null : a.id)}>
-                          {editingId === a.id ? "إغلاق" : "تعديل الأقسام"}
-                        </button>
-                      )}
+                      <div className="decide-row">
+                        {can("accounts.sections") && (
+                          <button className="invoice-action-btn" onClick={() => setEditingId(editingId === a.id ? null : a.id)}>
+                            {editingId === a.id ? "إغلاق" : "تعديل الأقسام"}
+                          </button>
+                        )}
+                        {tab === "customers" && can("accounts.approve") && (
+                          <button className="invoice-action-btn" onClick={() => setEditAccount(a)}>
+                            تعديل البيانات
+                          </button>
+                        )}
+                        {tab === "customers" && can("accounts.approve") && (
+                          <DeleteAccountButton kind={kind} account={a} onDone={reload} />
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {editingId === a.id && (
@@ -1006,6 +1022,86 @@ function AddAccountForm({ kind, sections, onClose, onDone }) {
         <button className="btn-ghost" onClick={onClose}>إلغاء</button>
       </div>
     </div>
+  );
+}
+
+function EditAccountForm({ kind, account, onClose, onDone }) {
+  const label = kind === "customer" ? "عميل" : "مورد";
+  const [form, setForm] = useState({
+    name: account.business_name || "",
+    phone: account.phone || "",
+    address: account.address || "",
+  });
+  const [location, setLocation] = useState(
+    account.latitude != null && account.longitude != null
+      ? { lat: Number(account.latitude), lng: Number(account.longitude) }
+      : null
+  );
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const save = useAction(() => api.updateAccount(kind, account.id, {
+    businessName: form.name.trim() !== account.business_name ? form.name.trim() : undefined,
+    phone: form.phone.trim() !== account.phone ? form.phone.trim() : undefined,
+    address: form.address.trim() !== (account.address || "") ? form.address.trim() : undefined,
+    latitude: location?.lat !== Number(account.latitude) ? location?.lat : undefined,
+    longitude: location?.lng !== Number(account.longitude) ? location?.lng : undefined,
+  }));
+
+  const valid = form.name.trim() && form.phone.replace(/\D/g, "").length >= 9;
+
+  return (
+    <div className="detail-card add-account-form">
+      <h2 className="subsection-heading">تعديل بيانات {label}</h2>
+      <div className="add-form-grid">
+        <div>
+          <label className="field-label">اسم {label}</label>
+          <input className="field-input" value={form.name} onChange={set("name")} />
+          <label className="field-label">رقم الهاتف</label>
+          <input className="field-input" value={form.phone} onChange={set("phone")}
+            dir="ltr" style={{ textAlign: "right" }} inputMode="numeric" placeholder="09XXXXXXXX" />
+          <label className="field-label">العنوان</label>
+          <input className="field-input" value={form.address} onChange={set("address")} />
+        </div>
+        <div>
+          <label className="field-label">الموقع على الخريطة</label>
+          <LocationPicker value={location} onChange={setLocation} />
+        </div>
+      </div>
+
+      {save.error && <p className="field-error" style={{ marginTop: 10 }}>{save.error}</p>}
+
+      <div className="add-form-actions">
+        <button className="btn-primary" disabled={!valid || save.pending}
+          onClick={() => save.run().then(() => { onDone(); onClose(); }).catch(() => {})}>
+          {save.pending ? "جارٍ الحفظ…" : "حفظ التعديلات"}
+        </button>
+        <button className="btn-ghost" onClick={onClose}>إلغاء</button>
+      </div>
+    </div>
+  );
+}
+
+function DeleteAccountButton({ kind, account, onDone }) {
+  const [confirming, setConfirming] = useState(false);
+  const del = useAction(() => api.deleteAccount(kind, account.id));
+
+  if (confirming) {
+    return (
+      <div className="decide-row">
+        <span className="cell-muted" style={{ alignSelf: "center" }}>متأكد؟</span>
+        <button className="invoice-action-btn" disabled={del.pending}
+          onClick={() => del.run().then(onDone).catch(() => {})}>
+          {del.pending ? "جارٍ الحذف…" : "نعم، احذف"}
+        </button>
+        <button className="invoice-action-btn" onClick={() => setConfirming(false)}>تراجع</button>
+        {del.error && <span className="field-error" style={{ margin: 0 }}>{del.error}</span>}
+      </div>
+    );
+  }
+  return (
+    <button className="invoice-action-btn" onClick={() => setConfirming(true)}>
+      حذف
+    </button>
   );
 }
 
