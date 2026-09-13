@@ -142,10 +142,11 @@ export const api = {
   createExpense: (body) => request("/finance/expenses", { method: "POST", body }),
 
   /* الموظفون */
-  employees: () => request("/employees"),
+  employees: (params) => request("/employees", { params }),
   employeeRoles: () => request("/employees/roles"),
   createEmployee: (body) => request("/employees", { method: "POST", body }),
   updateEmployee: (id, body) => request(`/employees/${id}`, { method: "PATCH", body }),
+  deleteEmployee: (id) => request(`/employees/${id}`, { method: "DELETE" }),
 
   /* الحسابات (عملاء وموردون) */
   accounts: (kind, params) => request(`/accounts/${kind}`, { params }),
@@ -157,6 +158,8 @@ export const api = {
   setAccountSections: (kind, id, sectionIds) =>
     request(`/accounts/${kind}/${id}/sections`, { method: "PATCH", body: { sectionIds } }),
   setCustomerCredit: (id, body) => request(`/accounts/customer/${id}/credit`, { method: "PATCH", body }),
+  updateAccount: (kind, id, body) => request(`/accounts/${kind}/${id}`, { method: "PATCH", body }),
+  deleteAccount: (kind, id) => request(`/accounts/${kind}/${id}`, { method: "DELETE" }),
 
   /* إعدادات التوصيل */
   deliveryZones: () => request("/delivery/zones"),
