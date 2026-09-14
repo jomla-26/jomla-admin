@@ -855,8 +855,8 @@ function AccountsView({ can }) {
                     <td className="cell-muted">{a.address || "—"}</td>
                     <td className="cell-muted">{enabled.length ? enabled.map((s) => s.name).join("، ") : "—"}</td>
                     <td>
-                      <span className={"status-pill" + (a.status === "approved" ? " status-pill-approved" : "")}>
-                        {a.status === "approved" ? "معتمد" : a.status === "pending" ? "بانتظار الاعتماد" : a.status}
+                      <span className={"status-pill" + (a.status === "approved" ? " status-pill-approved" : a.status === "suspended" ? " status-pill-cancelled" : "")}>
+                     {a.status === "approved" ? "معتمد" : a.status === "pending" ? "بانتظار الاعتماد" : a.status === "suspended" ? "متوقف" : a.status === "rejected" ? "مرفوض" : a.status}
                       </span>
                     </td>
                     <td>
