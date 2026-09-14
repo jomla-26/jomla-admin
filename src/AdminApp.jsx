@@ -1084,8 +1084,6 @@ function EditAccountForm({ kind, account, onClose, onDone }) {
 function DeleteAccountButton({ kind, account, onDone }) {
   const [confirming, setConfirming] = useState(false);
   const isSuspended = account.status === "suspended";
-  const action = useAction(() => api.updateAccount(kind, account.id, {})
-    .catch(() => {}));
 
   const suspend = useAction(() => api.deleteAccount(kind, account.id));
   const reactivate = useAction(() => api.approveAccount(kind, account.id));
