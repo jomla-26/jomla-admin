@@ -66,16 +66,16 @@ export default function JomlaAdminApp() {
   if (loading) return <Shell><Centered><Loader2 className="spin" size={26} /><p>جارٍ التحميل…</p></Centered></Shell>;
   if (!actor) return <Shell><LoginView onRequestOtp={requestOtp} onVerify={verifyOtp} /></Shell>;
 
-  const ROOTS = ["dashboard", "review", "accounts", "employees", "delivery", "operations", "settings", "reports"];
+  const ROOTS = ["dashboard", "orders", "accounts", "employees", "delivery", "operations", "settings", "reports"];
   const TITLES = {
-    dashboard: "نظرة عامة", review: "مراجعة الطلبيات", accounts: "الحسابات",
+    dashboard: "نظرة عامة", orders: "الطلبيات", accounts: "الحسابات",
     employees: "الموظفون والرواتب", delivery: "التوصيل والمندوبين",
     operations: "الأصول والمتابعة", settings: "الإعدادات", reports: "التقارير العامة",
     orderDetail: "تفاصيل الطلبية", customerLedger: "كشف حساب العميل",
     supplierLedger: "كشف حساب المورد", itemDetail: "بطاقة الصنف",
   };
   const backTo = {
-    orderDetail: "review", customerLedger: "reports",
+    orderDetail: "orders", customerLedger: "reports",
     supplierLedger: "reports", itemDetail: "reports",
   };
 
@@ -96,7 +96,7 @@ export default function JomlaAdminApp() {
 
           <main className="content-body">
             {view === "dashboard" && <Dashboard onGo={go} />}
-            {view === "review" && <ReviewQueue onOpen={(id) => go("orderDetail", { orderId: id })} />}
+            {view === "orders" && <OrdersHub onOpen={(id) => go("orderDetail", { orderId: id })} />}
             {view === "orderDetail" && <OrderDetail orderId={sel.orderId} can={can} onDone={() => setView("review")} />}
             {view === "accounts" && <AccountsView can={can} />}
             {view === "employees" && <EmployeesView can={can} />}
@@ -235,7 +235,7 @@ function Sidebar({ view, roots, backTo, onNav, onLogout }) {
   const active = roots.includes(view) ? view : backTo[view] || "dashboard";
   const items = [
     { id: "dashboard", label: "الرئيسية", Icon: Home },
-    { id: "review", label: "مراجعة الطلبيات", Icon: ClipboardCheck },
+    { id: "orders", label: "الطلبيات", Icon: ClipboardCheck },
     { id: "accounts", label: "الحسابات", Icon: Users },
     { id: "employees", label: "الموظفون والرواتب", Icon: Wallet },
     { id: "delivery", label: "التوصيل والمندوبين", Icon: Truck },
@@ -330,6 +330,173 @@ function OrdersTable({ orders, onOpen }) {
     </table>
   );
 }
+/* أضف هذه الدالة في AdminApp.jsx — يفضّل بعد نهاية دالة ReviewQueue الحالية */
+
+const ALL_STATUSES_FOR_BULK = [
+  "under_review", "sent_to_supplier", "supplier_preparing", "shortage",
+  "ready_for_delivery", "ready_for_pickup", "out_for_delivery",
+  "awaiting_pickup", "delivered", "postponed", "cancelled",
+];
+
+function AllOrdersView({ onOpen }) {
+  const [status, setStatus] = useState("all");
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(new Set());
+  const [targetStatus, setTargetStatus] = useState("");
+  const [driverId, setDriverId] = useState("");
+  const [showBulkForm, setShowBulkForm] = useState(false);
+
+  const { data, loading, error, reload } = useFetch(
+    (s) => api.orders(status === "all" ? undefined : { status }, s), [status]
+  );
+  const drivers = useFetch((s) => api.driversCash(s).catch(() => []), []);
+
+  const needsDriver = targetStatus === "out_for_delivery";
+  const bulk = useAction(() => api.bulkOrderStatus({
+    orderIds: [...selected], status: targetStatus,
+    driverId: needsDriver ? driverId : undefined,
+  }));
+
+  const filters = [
+    ["all", "الكل"], ["under_review", "قيد المراجعة"], ["sent_to_supplier", "مرسلة إلى المورد"],
+    ["supplier_preparing", "قيد التجهيز"], ["shortage", "بها نقص"],
+    ["ready_for_delivery", "جاهزة للتوصيل"], ["out_for_delivery", "في الطريق"],
+    ["delivered", "تم التسليم"], ["cancelled", "ملغاة"],
+  ];
+
+  const visible = (data ?? []).filter(
+    (o) => !query.trim() || o.order_number.toLowerCase().includes(query.trim().toLowerCase())
+  );
+
+  function toggleOne(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function toggleAll() {
+    setSelected((prev) =>
+      prev.size === visible.length ? new Set() : new Set(visible.map((o) => o.id))
+    );
+  }
+  function clearSelection() {
+    setSelected(new Set());
+    setShowBulkForm(false);
+    setTargetStatus("");
+    setDriverId("");
+  }
+
+  async function applyBulk() {
+    if (!targetStatus) return;
+    if (needsDriver && !driverId) return;
+    const res = await bulk.run().catch(() => null);
+    if (!res) return;
+    reload();
+    clearSelection();
+    const msg = res.skippedCount
+      ? `تم تحويل ${res.updatedCount} طلبية، وتخطي ${res.skippedCount} (راجع السبب لكل واحدة)`
+      : `تم تحويل ${res.updatedCount} طلبية بنجاح`;
+    alert(msg);
+  }
+
+  return (
+    <div className="screen">
+      <div className="toolbar-row">
+        <div className="chip-row">
+          {filters.map(([id, label]) => (
+            <button key={id} className={"chip" + (status === id ? " chip-active" : "")}
+              onClick={() => { setStatus(id); clearSelection(); }}>{label}</button>
+          ))}
+        </div>
+        <SearchBar inline value={query} onChange={setQuery} placeholder="ابحث برقم الفاتورة..." />
+      </div>
+
+      {selected.size > 0 && (
+        <div className="bulk-bar">
+          <span>{selected.size} طلبية محددة</span>
+          {showBulkForm ? (
+            <div className="bulk-form-inline">
+              <select className="field-input" style={{ marginBottom: 0, width: 190 }}
+                value={targetStatus}
+                onChange={(e) => { setTargetStatus(e.target.value); setDriverId(""); }}>
+                <option value="">— اختر الحالة الجديدة —</option>
+                {ALL_STATUSES_FOR_BULK.map((s) => (
+                  <option key={s} value={s}>{statusLabel(s)}</option>
+                ))}
+              </select>
+
+              {needsDriver && (
+                <select className="field-input" style={{ marginBottom: 0, width: 170 }}
+                  value={driverId} onChange={(e) => setDriverId(e.target.value)}>
+                  <option value="">— اختر المندوب —</option>
+                  {(drivers.data ?? []).map((d) => (
+                    <option key={d.driver_id} value={d.driver_id}>{d.name}</option>
+                  ))}
+                </select>
+              )}
+
+              <button className="invoice-action-btn"
+                disabled={!targetStatus || (needsDriver && !driverId) || bulk.pending}
+                onClick={applyBulk}>
+                {bulk.pending ? "جارٍ التحويل…" : "تأكيد التحويل"}
+              </button>
+              <button className="invoice-action-btn" onClick={() => setShowBulkForm(false)}>إلغاء</button>
+            </div>
+          ) : (
+            <button className="invoice-action-btn" onClick={() => setShowBulkForm(true)}>
+              تحويل الحالة دفعة واحدة
+            </button>
+          )}
+          <button className="link-btn" onClick={clearSelection}>إلغاء التحديد</button>
+        </div>
+      )}
+      {needsDriver && showBulkForm && (
+        <p className="hint">التحويل لـ"في الطريق" يشمل فقط طلبيات التوصيل — طلبيات الاستلام الشخصي المحددة يتم تخطّيها تلقائيًا.</p>
+      )}
+      {bulk.error && <p className="field-error">{bulk.error}</p>}
+
+      {loading ? <Spinner />
+       : error ? <ErrorState message={error} onRetry={reload} />
+       : !visible.length ? <Empty text="لا توجد طلبيات مطابقة" />
+       : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th style={{ width: 34 }}>
+                <input type="checkbox" checked={selected.size === visible.length && visible.length > 0}
+                  onChange={toggleAll} />
+              </th>
+              <th>رقم الفاتورة</th><th>العميل</th><th>التاريخ</th>
+              <th>التسليم</th><th>الحالة</th><th>القيمة</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((o) => (
+              <tr className="data-row" key={o.id}>
+                <td onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleOne(o.id)} />
+                </td>
+                <td className="cell-id" onClick={() => onOpen(o.id)}>{o.order_number}</td>
+                <td onClick={() => onOpen(o.id)}>{o.customer_name}</td>
+                <td className="cell-muted" onClick={() => onOpen(o.id)}>{day(o.created_at)}</td>
+                <td className="cell-muted" onClick={() => onOpen(o.id)}>
+                  {o.fulfillment === "pickup" ? "استلام شخصي" : "توصيل"}
+                </td>
+                <td onClick={() => onOpen(o.id)}>
+                  <span className={"status-pill" + (o.status === "cancelled" ? " status-pill-cancelled" : "")}>
+                    {statusLabel(o.status)}
+                  </span>
+                </td>
+                <td className="cell-amount" onClick={() => onOpen(o.id)}>{money(o.grand_total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
 
 /* ---------------------- مراجعة الطلبيات ---------------------- */
 
@@ -367,6 +534,26 @@ function ReviewQueue({ onOpen }) {
        : error ? <ErrorState message={error} onRetry={reload} />
        : <OrdersTable orders={visible} onOpen={onOpen} />}
     </div>
+  );
+}
+function OrdersHub({ onOpen }) {
+  const [tab, setTab] = useState("all");
+  return (
+    <>
+      <div className="chip-row" style={{ padding: "20px 34px 0" }}>
+        <button className={"chip" + (tab === "all" ? " chip-active" : "")}
+          onClick={() => setTab("all")}>كل الطلبيات</button>
+        <button className={"chip" + (tab === "review" ? " chip-active" : "")}
+          onClick={() => setTab("review")}>مراجعة الطلبيات</button>
+        <button className={"chip" + (tab === "create" ? " chip-active" : "")}
+          onClick={() => setTab("create")}>إنشاء طلبية جديدة</button>
+      </div>
+      {tab === "all" && <AllOrdersView onOpen={onOpen} />}
+      {tab === "review" && <ReviewQueue onOpen={onOpen} />}
+      {tab === "create" && (
+        <div className="screen"><p className="hint">قريبًا — قيد الإنشاء.</p></div>
+      )}
+    </>
   );
 }
 
