@@ -2827,6 +2827,14 @@ function Style() {
 
       .toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:16px;
         margin-bottom:16px;flex-wrap:wrap}
+        .bulk-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--ink);
+  color:#fff;padding:12px 16px;margin-bottom:16px;font-size:13px}
+.bulk-bar span{font-family:var(--font-display);font-weight:700}
+.bulk-bar .invoice-action-btn{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff}
+.bulk-bar .invoice-action-btn:hover{border-color:var(--orange);color:var(--orange)}
+.bulk-bar .link-btn{color:rgba(255,255,255,.7);margin-inline-start:auto}
+.bulk-form-inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bulk-form-inline select.field-input{background:#fff;color:var(--ink)}
       .chip-row{display:flex;gap:8px;flex-wrap:wrap}
       .chip{border:1px solid var(--rule);background:var(--paper-raised);padding:8px 15px;font-size:13px;
         color:var(--ink);cursor:pointer;white-space:nowrap;font-family:var(--font-body)}
