@@ -1083,24 +1083,41 @@ function EditAccountForm({ kind, account, onClose, onDone }) {
 
 function DeleteAccountButton({ kind, account, onDone }) {
   const [confirming, setConfirming] = useState(false);
-  const del = useAction(() => api.deleteAccount(kind, account.id));
+  const isSuspended = account.status === "suspended";
+  const action = useAction(() => api.updateAccount(kind, account.id, {})
+    .catch(() => {}));
+
+  const suspend = useAction(() => api.deleteAccount(kind, account.id));
+  const reactivate = useAction(() => api.approveAccount(kind, account.id));
+
+  if (isSuspended) {
+    return (
+      <div className="decide-row">
+        <button className="invoice-action-btn" disabled={reactivate.pending}
+          onClick={() => reactivate.run().then(onDone).catch(() => {})}>
+          {reactivate.pending ? "جارٍ التفعيل…" : "إعادة تفعيل"}
+        </button>
+        {reactivate.error && <span className="field-error" style={{ margin: 0 }}>{reactivate.error}</span>}
+      </div>
+    );
+  }
 
   if (confirming) {
     return (
       <div className="decide-row">
         <span className="cell-muted" style={{ alignSelf: "center" }}>متأكد؟</span>
-        <button className="invoice-action-btn" disabled={del.pending}
-          onClick={() => del.run().then(onDone).catch(() => {})}>
-          {del.pending ? "جارٍ الحذف…" : "نعم، احذف"}
+        <button className="invoice-action-btn" disabled={suspend.pending}
+          onClick={() => suspend.run().then(onDone).catch(() => {})}>
+          {suspend.pending ? "جارٍ الإيقاف…" : "نعم، أوقف"}
         </button>
         <button className="invoice-action-btn" onClick={() => setConfirming(false)}>تراجع</button>
-        {del.error && <span className="field-error" style={{ margin: 0 }}>{del.error}</span>}
+        {suspend.error && <span className="field-error" style={{ margin: 0 }}>{suspend.error}</span>}
       </div>
     );
   }
   return (
     <button className="invoice-action-btn" onClick={() => setConfirming(true)}>
-      حذف
+      إيقاف الحساب
     </button>
   );
 }
