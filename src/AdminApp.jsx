@@ -871,7 +871,7 @@ function AccountsView({ can }) {
                             تعديل البيانات
                           </button>
                         )}
-                        {can("accounts.
+                        {can("accounts.approve") && (
                           <DeleteAccountButton kind={kind} account={a} onDone={reload} />
                         )}
                       </div>
