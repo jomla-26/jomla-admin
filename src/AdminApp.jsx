@@ -1127,8 +1127,11 @@ function EmployeesView({ can }) {
   const [showAdd, setShowAdd] = useState(false);
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [editEmployee, setEditEmployee] = useState(null);
 
-  const employees = useFetch((s) => api.employees(s), []);
+  const employees = useFetch((s) => api.employees({ status: statusFilter }, s), [statusFilter]);
+  const roles = useFetch((s) => api.employeeRoles(s), []);
   const drivers = useFetch((s) => api.driversCash(s), []);
 
   const q = query.trim();
@@ -1150,12 +1153,22 @@ function EmployeesView({ can }) {
               <Wallet size={14} style={{ verticalAlign: "-2px", marginLeft: 4 }} /> صرف راتب
             </button>
           )}
+          <button className={"chip" + (statusFilter === "active" ? " chip-active" : "")}
+            onClick={() => setStatusFilter("active")}>نشطون</button>
+          <button className={"chip" + (statusFilter === "inactive" ? " chip-active" : "")}
+            onClick={() => setStatusFilter("inactive")}>متوقفون</button>
+          <button className={"chip" + (statusFilter === "all" ? " chip-active" : "")}
+            onClick={() => setStatusFilter("all")}>الكل</button>
         </div>
         <SearchBar inline value={query} onChange={setQuery} placeholder="ابحث باسم الموظف أو رقمه..." />
       </div>
 
       {showAdd && <AddEmployeeForm onClose={() => setShowAdd(false)} onDone={refresh} />}
       {showPay && <PaySalaryForm employees={employees.data ?? []} onClose={() => setShowPay(false)} onDone={refresh} />}
+      {editEmployee && (
+        <EditEmployeeForm employee={editEmployee} roles={roles.data ?? []}
+          onClose={() => setEditEmployee(null)} onDone={refresh} />
+      )}
 
       <h2 className="subsection-heading">كشف الموظفين</h2>
       {employees.loading ? <Spinner />
@@ -1163,7 +1176,7 @@ function EmployeesView({ can }) {
        : !list.length ? <Empty icon={Users} text="لا يوجد موظفون مطابقون" />
        : (
         <table className="data-table">
-          <thead><tr><th>الموظف</th><th>الوظيفة</th><th>الهاتف</th><th>تاريخ المباشرة</th><th>الراتب الشهري</th><th></th></tr></thead>
+          <thead><tr><th>الموظف</th><th>الوظيفة</th><th>الهاتف</th><th>تاريخ المباشرة</th><th>الراتب الشهري</th><th>الحالة</th><th></th></tr></thead>
           <tbody>
             {list.map((e) => (
               <React.Fragment key={e.id}>
@@ -1175,15 +1188,30 @@ function EmployeesView({ can }) {
                   <td className="cell-muted">{day(e.started_on)}</td>
                   <td className="cell-amount">{money(e.monthly_salary)}</td>
                   <td>
-                    {can("employees.manage") && (
-                      <button className="invoice-action-btn" onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}>
-                        {expandedId === e.id ? "إغلاق" : "الحضور والتقييم"}
-                      </button>
-                    )}
+                    <span className={"status-pill" + (e.is_active === false ? " status-pill-cancelled" : " status-pill-approved")}>
+                      {e.is_active === false ? "متوقف" : "نشط"}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="decide-row">
+                      {can("employees.manage") && (
+                        <button className="invoice-action-btn" onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}>
+                          {expandedId === e.id ? "إغلاق" : "الحضور والتقييم"}
+                        </button>
+                      )}
+                      {can("employees.manage") && (
+                        <button className="invoice-action-btn" onClick={() => setEditEmployee(e)}>
+                          تعديل
+                        </button>
+                      )}
+                      {can("employees.manage") && (
+                        <ToggleEmployeeButton employee={e} onDone={refresh} />
+                      )}
+                    </div>
                   </td>
                 </tr>
                 {expandedId === e.id && (
-                  <tr><td colSpan={6}><EmployancePanel employeeId={e.id} /></td></tr>
+                  <tr><td colSpan={7}><EmployancePanel employeeId={e.id} /></td></tr>
                 )}
               </React.Fragment>
             ))}
@@ -1392,6 +1420,90 @@ function AddEmployeeForm({ onClose, onDone }) {
         <button className="btn-ghost" onClick={onClose}>إلغاء</button>
       </div>
     </div>
+  );
+}
+
+function EditEmployeeForm({ employee, roles, onClose, onDone }) {
+  const [form, setForm] = useState({
+    name: employee.name || "",
+    phone: employee.phone || "",
+    roleCode: employee.role_code || "",
+    monthlySalary: employee.monthly_salary || "",
+  });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const save = useAction(() => api.updateEmployee(employee.id, {
+    name: form.name.trim() !== employee.name ? form.name.trim() : undefined,
+    phone: form.phone.trim() !== employee.phone ? form.phone.trim() : undefined,
+    roleCode: form.roleCode !== employee.role_code ? form.roleCode : undefined,
+    monthlySalary: Number(form.monthlySalary) !== Number(employee.monthly_salary)
+      ? Number(form.monthlySalary) : undefined,
+  }));
+
+  const valid = form.name.trim() && form.phone.trim() && form.roleCode && form.monthlySalary;
+
+  return (
+    <div className="detail-card voucher-form">
+      <h2 className="subsection-heading">تعديل بيانات الموظف</h2>
+      <label className="field-label">اسم الموظف</label>
+      <input className="field-input" value={form.name} onChange={set("name")} />
+      <label className="field-label">رقم الهاتف</label>
+      <input className="field-input" value={form.phone} onChange={set("phone")}
+        dir="ltr" style={{ textAlign: "right" }} inputMode="numeric" placeholder="09XXXXXXXX" />
+      <label className="field-label">الوظيفة والصلاحيات</label>
+      <select className="field-input" value={form.roleCode} onChange={set("roleCode")}>
+        {roles.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
+      </select>
+      <label className="field-label">الراتب الشهري (د.ل)</label>
+      <input className="field-input" type="number" min="0" value={form.monthlySalary} onChange={set("monthlySalary")} />
+      {save.error && <p className="field-error">{save.error}</p>}
+      <div className="add-form-actions">
+        <button className="btn-primary" disabled={!valid || save.pending}
+          onClick={() => save.run().then(() => { onDone(); onClose(); }).catch(() => {})}>
+          {save.pending ? "جارٍ الحفظ…" : "حفظ التعديلات"}
+        </button>
+        <button className="btn-ghost" onClick={onClose}>إلغاء</button>
+      </div>
+    </div>
+  );
+}
+
+function ToggleEmployeeButton({ employee, onDone }) {
+  const [confirming, setConfirming] = useState(false);
+  const isInactive = employee.is_active === false;
+
+  const deactivate = useAction(() => api.deleteEmployee(employee.id));
+  const reactivate = useAction(() => api.updateEmployee(employee.id, { isActive: true }));
+
+  if (isInactive) {
+    return (
+      <div className="decide-row">
+        <button className="invoice-action-btn" disabled={reactivate.pending}
+          onClick={() => reactivate.run().then(onDone).catch(() => {})}>
+          {reactivate.pending ? "جارٍ التفعيل…" : "إعادة تفعيل"}
+        </button>
+        {reactivate.error && <span className="field-error" style={{ margin: 0 }}>{reactivate.error}</span>}
+      </div>
+    );
+  }
+
+  if (confirming) {
+    return (
+      <div className="decide-row">
+        <span className="cell-muted" style={{ alignSelf: "center" }}>متأكد؟</span>
+        <button className="invoice-action-btn" disabled={deactivate.pending}
+          onClick={() => deactivate.run().then(onDone).catch(() => {})}>
+          {deactivate.pending ? "جارٍ التعطيل…" : "نعم، عطّل"}
+        </button>
+        <button className="invoice-action-btn" onClick={() => setConfirming(false)}>تراجع</button>
+        {deactivate.error && <span className="field-error" style={{ margin: 0 }}>{deactivate.error}</span>}
+      </div>
+    );
+  }
+  return (
+    <button className="invoice-action-btn" onClick={() => setConfirming(true)}>
+      تعطيل الموظف
+    </button>
   );
 }
 
