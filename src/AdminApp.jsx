@@ -866,12 +866,12 @@ function AccountsView({ can }) {
                             {editingId === a.id ? "إغلاق" : "تعديل الأقسام"}
                           </button>
                         )}
-                        {tab === "customers" && can("accounts.approve") && (
+                        {can("accounts.approve") && (
                           <button className="invoice-action-btn" onClick={() => setEditAccount(a)}>
                             تعديل البيانات
                           </button>
                         )}
-                        {tab === "customers" && can("accounts.approve") && (
+                        {can("accounts.
                           <DeleteAccountButton kind={kind} account={a} onDone={reload} />
                         )}
                       </div>
