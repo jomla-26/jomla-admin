@@ -113,6 +113,10 @@ export const api = {
   createOrder: (body) => request("/orders", { method: "POST", body }),
   orders: (params) => request("/orders", { params }),
 
+addOrderItem: (orderId, body) => request(`/orders/${orderId}/items`, { method: "POST", body }),
+updateOrderItem: (orderId, itemId, body) => request(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body }),
+removeOrderItem: (orderId, itemId) => request(`/orders/${orderId}/items/${itemId}`, { method: "DELETE" }),
+
 bulkOrderStatus: (body) => request("/orders/bulk-status", { method: "PATCH", body }),
 adminCreateOrder: (body) => request("/orders/admin-create", { method: "POST", body }),
   order: (id) => request(`/orders/${id}`),
