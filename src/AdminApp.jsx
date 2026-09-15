@@ -1046,6 +1046,15 @@ function OrderDetail({ orderId, can, onDone }) {
   const [driverId, setDriverId] = useState("");
 
   const drivers = useFetch((s) => api.driversCash(s).catch(() => []), []);
+const zones = useFetch((s) => api.deliveryZones(s).catch(() => []), []);
+const [editFulfillment, setEditFulfillment] = useState(false);
+const [newFulfillment, setNewFulfillment] = useState("delivery");
+const [zoneId, setZoneId] = useState("");
+const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
+  fulfillment: newFulfillment,
+  deliveryZoneId: newFulfillment === "delivery" ? (zoneId || undefined) : undefined,
+}));
+
   const approve = useAction(() => api.approveOrder(orderId, {
     depositDueAtDelivery: deposit ? Number(deposit) : undefined,
     deferredDueDate: dueDate || undefined,
@@ -1163,7 +1172,41 @@ function OrderDetail({ orderId, can, onDone }) {
             <div className={"fulfillment-badge " + (order.fulfillment === "pickup" ? "fulfillment-badge-pickup" : "fulfillment-badge-delivery")}>
   {order.fulfillment === "pickup" ? "📦 طلبية استلام شخصي" : "🚚 طلبية توصيل"}
 </div>
+{can("orders.review") && !FINAL_STATUSES.includes(order.status) && !order.driver_id && (
+  editFulfillment ? (
+    <div className="sections-editor" style={{ marginBottom: 12 }}>
+      <div className="tile-row-inline" style={{ marginBottom: 10 }}>
+        <button className={"chip" + (newFulfillment === "delivery" ? " chip-active" : "")}
+          onClick={() => setNewFulfillment("delivery")}>توصيل</button>
+        <button className={"chip" + (newFulfillment === "pickup" ? " chip-active" : "")}
+          onClick={() => setNewFulfillment("pickup")}>استلام شخصي</button>
+      </div>
+      {newFulfillment === "delivery" && (
+        <>
+          <label className="field-label">منطقة التوصيل</label>
+          <select className="field-input" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
+            <option value="">— اختر المنطقة —</option>
+            {(zones.data ?? []).map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
+          </select>
+        </>
+      )}
+      {changeFulfillment.error && <p className="field-error">{changeFulfillment.error}</p>}
+      <button className="invoice-action-btn"
+        disabled={changeFulfillment.pending || (newFulfillment === "delivery" && !zoneId)}
+        onClick={() => changeFulfillment.run().then(() => { reload(); setEditFulfillment(false); }).catch(() => {})}>
+        {changeFulfillment.pending ? "جارٍ الحفظ…" : "حفظ"}
+      </button>
+      <button className="invoice-action-btn" onClick={() => setEditFulfillment(false)}>إلغاء</button>
+    </div>
+  ) : (
+    <button className="link-btn" style={{ display: "block", marginBottom: 10 }}
+      onClick={() => { setNewFulfillment(order.fulfillment); setEditFulfillment(true); }}>
+      تغيير طريقة التسليم
+    </button>
+  )
+)}
 <p className="order-row-meta">{PAYMENT_LABELS[order.payment_method]}</p>
+
 
             {order.driver_id && (
               <p className="order-row-meta">مندوب التوصيل مُسنَد · المبلغ المطلوب {money(order.cod_amount)}</p>
