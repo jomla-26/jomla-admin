@@ -900,14 +900,6 @@ function ShortageRow({ shortage: sh, onResolved }) {
   );
 }
 
-/* ===================================================================
-   إضافة تعديل الفاتورة إلى OrderDetail — 3 قطع منفصلة:
-   1) مكوّن EditableItemsPanel جديد (يُضاف كدالة مستقلة)
-   2) استدعاؤه من داخل OrderDetail (تعديل صغير)
-   =================================================================== */
-
-/* ---- القطعة 1: أضف هذه الدالة بعد نهاية ShortageRow وقبل OrderDetail ---- */
-
 function EditableItemsPanel({ order, onChanged }) {
   const [addingProduct, setAddingProduct] = useState(false);
   const [sectionId, setSectionId] = useState("");
