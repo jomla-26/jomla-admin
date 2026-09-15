@@ -498,6 +498,189 @@ function AllOrdersView({ onOpen }) {
   );
 }
 
+/* أضف هذه الدالة في AdminApp.jsx — بعد AllOrdersView مباشرة (قبل OrdersHub) */
+
+function CreateOrderView({ onCreated }) {
+  const [customerId, setCustomerId] = useState("");
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [fulfillment, setFulfillment] = useState("delivery");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [deliveryZoneId, setDeliveryZoneId] = useState("");
+  const [vehicleTypeId, setVehicleTypeId] = useState("");
+  const [vehiclesCount, setVehiclesCount] = useState(1);
+  const [sectionId, setSectionId] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+  const [items, setItems] = useState([]);
+
+  const customers = useFetch((s) => api.accounts("customer", { status: "approved" }, s), []);
+  const zones = useFetch((s) => api.deliveryZones(s).catch(() => []), []);
+  const vehicleTypes = useFetch((s) => api.vehicleTypes(s).catch(() => []), []);
+  const products = useFetch(
+    (s) => (sectionId ? api.products({ sectionId }, s) : Promise.resolve([])),
+    [sectionId]
+  );
+
+  const customer = (customers.data ?? []).find((c) => c.id === customerId);
+  const allowedSections = customer ? (customer.sections || []).filter((s) => s.enabled) : [];
+
+  const filteredCustomers = (customers.data ?? []).filter((c) =>
+    !customerQuery.trim() || c.business_name.includes(customerQuery.trim()) || (c.phone || "").includes(customerQuery.trim())
+  );
+  const filteredProducts = (products.data ?? []).filter((p) =>
+    !productSearch.trim() || p.name.includes(productSearch.trim())
+  );
+
+  function addItem(p) {
+    setItems((prev) => {
+      const existing = prev.find((i) => i.productId === p.id);
+      if (existing) return prev.map((i) => (i.productId === p.id ? { ...i, qty: i.qty + 1 } : i));
+      return [...prev, { productId: p.id, name: p.name, unit: p.unit, price: Number(p.base_price), qty: 1 }];
+    });
+  }
+  function updateQty(productId, qty) {
+    setItems((prev) => prev.map((i) => (i.productId === productId ? { ...i, qty: Math.max(1, qty) } : i)));
+  }
+  function removeItem(productId) {
+    setItems((prev) => prev.filter((i) => i.productId !== productId));
+  }
+
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+
+  const create = useAction(() => api.adminCreateOrder({
+    customerId,
+    fulfillment,
+    paymentMethod,
+    deliveryZoneId: fulfillment === "delivery" ? (deliveryZoneId || undefined) : undefined,
+    vehicleTypeId: fulfillment === "delivery" ? (vehicleTypeId || undefined) : undefined,
+    vehiclesCount: fulfillment === "delivery" ? Number(vehiclesCount) : undefined,
+    items: items.map((i) => ({ productId: i.productId, qty: i.qty })),
+  }));
+
+  const canSubmit = customerId && items.length > 0 && (fulfillment !== "delivery" || deliveryZoneId);
+
+  function resetForm() {
+    setCustomerId(""); setItems([]); setSectionId(""); setDeliveryZoneId(""); setVehicleTypeId("");
+  }
+
+  return (
+    <div className="screen">
+      <div className="detail-card add-account-form">
+        <h2 className="subsection-heading">إنشاء طلبية جديدة لعميل</h2>
+
+        <label className="field-label">العميل</label>
+        <SearchBar value={customerQuery} onChange={setCustomerQuery} placeholder="ابحث بالاسم أو رقم الهاتف..." />
+        <select className="field-input" value={customerId}
+          onChange={(e) => { setCustomerId(e.target.value); setItems([]); setSectionId(""); }}>
+          <option value="">— اختر العميل —</option>
+          {filteredCustomers.map((c) => (
+            <option key={c.id} value={c.id}>{c.business_name} — {c.phone}</option>
+          ))}
+        </select>
+
+        {customer && (
+          <>
+            <label className="field-label">طريقة التسليم</label>
+            <div className="tile-row-inline" style={{ marginBottom: 12 }}>
+              <button className={"chip" + (fulfillment === "delivery" ? " chip-active" : "")}
+                onClick={() => setFulfillment("delivery")}>توصيل</button>
+              <button className={"chip" + (fulfillment === "pickup" ? " chip-active" : "")}
+                onClick={() => setFulfillment("pickup")}>استلام شخصي</button>
+            </div>
+
+            {fulfillment === "delivery" && (
+              <>
+                <label className="field-label">منطقة التوصيل</label>
+                <select className="field-input" value={deliveryZoneId} onChange={(e) => setDeliveryZoneId(e.target.value)}>
+                  <option value="">— اختر المنطقة —</option>
+                  {(zones.data ?? []).map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
+                </select>
+                <label className="field-label">نوع السيارة (اختياري)</label>
+                <select className="field-input" value={vehicleTypeId} onChange={(e) => setVehicleTypeId(e.target.value)}>
+                  <option value="">— بدون تحديد —</option>
+                  {(vehicleTypes.data ?? []).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </>
+            )}
+
+            <label className="field-label">طريقة الدفع</label>
+            <select className="field-input" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+              {Object.entries(PAYMENT_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+
+            <label className="field-label">الأقسام المسموح بها لهذا العميل</label>
+            <div className="section-chip-row" style={{ marginBottom: 12 }}>
+              {allowedSections.map((s) => (
+                <button key={s.id} className={"chip" + (sectionId === s.id ? " chip-active" : "")}
+                  onClick={() => setSectionId(s.id)}>{s.name}</button>
+              ))}
+              {!allowedSections.length && <p className="hint">هذا العميل ليس له أقسام مفعّلة.</p>}
+            </div>
+
+            {sectionId && (
+              <>
+                <SearchBar value={productSearch} onChange={setProductSearch} placeholder="ابحث عن صنف..." />
+                {products.loading ? <Spinner /> : (
+                  <table className="data-table" style={{ marginBottom: 16 }}>
+                    <thead><tr><th>الصنف</th><th>السعر التقديري</th><th></th></tr></thead>
+                    <tbody>
+                      {filteredProducts.map((p) => (
+                        <tr className="data-row" key={p.id} onClick={() => addItem(p)}>
+                          <td>{p.name}</td>
+                          <td className="cell-muted">{money(p.base_price)} / {p.unit}</td>
+                          <td><button className="invoice-action-btn"
+                            onClick={(e) => { e.stopPropagation(); addItem(p); }}>إضافة</button></td>
+                        </tr>
+                      ))}
+                      {!filteredProducts.length && (
+                        <tr><td colSpan={3} className="cell-muted">لا توجد أصناف مطابقة</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+
+            {items.length > 0 && (
+              <>
+                <h2 className="subsection-heading">الأصناف المضافة</h2>
+                <table className="data-table" style={{ marginBottom: 10 }}>
+                  <thead><tr><th>الصنف</th><th>السعر</th><th>الكمية</th><th>الإجمالي</th><th></th></tr></thead>
+                  <tbody>
+                    {items.map((i) => (
+                      <tr key={i.productId}>
+                        <td>{i.name}</td>
+                        <td className="cell-muted">{money(i.price)}</td>
+                        <td>
+                          <input className="qty-input" type="number" min="1" value={i.qty} style={{ width: 70 }}
+                            onChange={(e) => updateQty(i.productId, Number(e.target.value))} />
+                        </td>
+                        <td className="cell-amount">{money(i.price * i.qty)}</td>
+                        <td><button className="invoice-action-btn" onClick={() => removeItem(i.productId)}>حذف</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="hint">السعر النهائي في الفاتورة يُحتسب تلقائيًا وقد يختلف حسب الأسعار الخاصة المتفق عليها مع العميل.</p>
+                <div className="summary-block">
+                  <div className="summary-row summary-total"><span>إجمالي الأصناف (تقديري)</span><b>{money(subtotal)}</b></div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {create.error && <p className="field-error">{create.error}</p>}
+        <div className="add-form-actions">
+          <button className="btn-primary" disabled={!canSubmit || create.pending}
+            onClick={() => create.run().then((order) => { resetForm(); onCreated(order); }).catch(() => {})}>
+            {create.pending ? "جارٍ الإنشاء…" : "إنشاء الطلبية وإرسالها للمراجعة"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------------- مراجعة الطلبيات ---------------------- */
 
 function ReviewQueue({ onOpen }) {
@@ -550,9 +733,7 @@ function OrdersHub({ onOpen }) {
       </div>
       {tab === "all" && <AllOrdersView onOpen={onOpen} />}
       {tab === "review" && <ReviewQueue onOpen={onOpen} />}
-      {tab === "create" && (
-        <div className="screen"><p className="hint">قريبًا — قيد الإنشاء.</p></div>
-      )}
+      {tab === "create" && <CreateOrderView onCreated={(order) => onOpen(order.id)} />}
     </>
   );
 }
