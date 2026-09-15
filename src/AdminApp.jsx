@@ -775,9 +775,21 @@ tbody td:first-child{width:40px;text-align:center;color:#5a5544}
 .sign div{flex:1;border-top:1px solid #17140f;padding-top:6px}
 footer{margin-top:32px;border-top:1px solid #d6d0c0;padding-top:14px;font-size:11px;color:#5a5544;
 display:flex;justify-content:space-between}
+.pdf-toolbar{position:sticky;top:0;z-index:10;display:flex;gap:10px;justify-content:center;
+  background:#17140f;padding:10px;margin-bottom:20px}
+.pdf-toolbar button{background:#ee4b15;color:#fff;border:none;padding:10px 18px;font-family:'Cairo',sans-serif;
+  font-weight:700;font-size:13px;cursor:pointer;border-radius:4px}
+.pdf-toolbar button:last-child{background:rgba(255,255,255,.15)}
+@media print{.pdf-toolbar{display:none}}
 @media print{body{padding:0}}
-</style></head><body><div class="sheet">
-<header><div><h1 class="brand">${COMPANY.name}<small>${COMPANY.address}<br/>${COMPANY.phone}</small></h1></div>
+</style></head><body>
+<div class="pdf-toolbar">
+  <button onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+  <button onclick="window.close()">✕ إغلاق</button>
+</div>
+<div class="sheet">
+<header><div><img src="${LOGO_FULL}" alt="${COMPANY.name}" style="height:52px;width:auto;display:block;margin-bottom:10px"/>
+<p style="margin:0;font-size:12px;color:#5a5544;line-height:1.7">${COMPANY.address}<br/>${COMPANY.phone}</p></div>
 <div><h2 class="doc-title">${title}</h2><div class="doc-meta">
 رقم الفاتورة: <strong>${order.order_number}</strong><br/>التاريخ: ${day(order.created_at)}<br/>
 الحالة: ${statusLabel(order.status)}</div></div></header>
@@ -1148,9 +1160,11 @@ function OrderDetail({ orderId, can, onDone }) {
               </span>
             </div>
             <p className="order-row-meta">{order.customer_name} · {day(order.created_at)}</p>
-            <p className="order-row-meta">
-              {order.fulfillment === "pickup" ? "استلام شخصي" : "توصيل"} · {PAYMENT_LABELS[order.payment_method]}
-            </p>
+            <div className={"fulfillment-badge " + (order.fulfillment === "pickup" ? "fulfillment-badge-pickup" : "fulfillment-badge-delivery")}>
+  {order.fulfillment === "pickup" ? "📦 طلبية استلام شخصي" : "🚚 طلبية توصيل"}
+</div>
+<p className="order-row-meta">{PAYMENT_LABELS[order.payment_method]}</p>
+
             {order.driver_id && (
               <p className="order-row-meta">مندوب التوصيل مُسنَد · المبلغ المطلوب {money(order.cod_amount)}</p>
             )}
@@ -1219,8 +1233,11 @@ function OrderDetail({ orderId, can, onDone }) {
             ) : null}
 
             {!isFinal && can("orders.review") && (
-              <div className="manual-status-block">
-                <label className="field-label">تغيير حالة الطلبية يدويًا</label>
+  <div className="manual-status-block">
+    <div className={"fulfillment-badge " + (order.fulfillment === "pickup" ? "fulfillment-badge-pickup" : "fulfillment-badge-delivery")}>
+      {order.fulfillment === "pickup" ? "📦 استلام شخصي — لا حاجة لمندوب توصيل" : "🚚 طلبية توصيل"}
+    </div>
+    <label className="field-label">تغيير حالة الطلبية يدويًا</label>
                 <select className="field-input" value={manualStatus} onChange={(e) => setManualStatus(e.target.value)}>
                   {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
@@ -3224,7 +3241,23 @@ function Style() {
         margin-bottom:16px;padding:14px 0}
       .manual-status-block{border-top:1px dashed var(--rule);margin-top:16px;padding-top:16px}
       .hint{font-size:11.5px;color:var(--ink-soft);margin:4px 0 10px;line-height:1.6}
-
+      .fulfillment-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-display);
+  font-weight:700;font-size:12.5px;padding:7px 13px;margin:6px 0 10px}
+.fulfillment-badge-delivery{background:rgba(23,20,15,.07);color:var(--ink)}
+.fulfillment-badge-pickup{background:rgba(169,118,30,.14);color:var(--amber)}
+.chat-panel{border:1px solid var(--rule);background:var(--paper-raised);margin-bottom:20px}
+.chat-thread{max-height:280px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.chat-empty{font-size:12.5px;color:var(--ink-soft);text-align:center;padding:16px 0;margin:0}
+.chat-bubble{max-width:80%;padding:8px 11px;font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+.chat-bubble-user{align-self:flex-end;background:var(--ink);color:#fff}
+.chat-bubble-support{align-self:flex-start;background:var(--paper);color:var(--ink)}
+.chat-time{font-size:10px;opacity:.6}
+.chat-input-row{display:flex;gap:8px;padding:10px;border-top:1px solid var(--rule)}
+.chat-input{flex:1;border:1px solid var(--rule);background:var(--paper);padding:9px 11px;
+  font-family:var(--font-body);font-size:12.5px;color:var(--ink)}
+.chat-input:focus{outline:2px solid var(--orange);outline-offset:1px}
+.chat-send{background:var(--orange);color:#fff;border:none;padding:0 14px;cursor:pointer;display:flex;align-items:center}
+.chat-send:disabled{opacity:.6}
       .add-account-form,.voucher-form{max-width:860px;margin-bottom:22px}
       .voucher-form{max-width:460px}
       .add-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
