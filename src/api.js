@@ -112,7 +112,6 @@ export const api = {
   /* الطلبيات */
   createOrder: (body) => request("/orders", { method: "POST", body }),
   orders: (params) => request("/orders", { params }),
-  /* أضف هذين السطرين داخل كائن api في api.js — بجانب باقي دوال orders */
 
 bulkOrderStatus: (body) => request("/orders/bulk-status", { method: "PATCH", body }),
 adminCreateOrder: (body) => request("/orders/admin-create", { method: "POST", body }),
