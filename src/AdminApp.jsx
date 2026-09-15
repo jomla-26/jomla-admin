@@ -1108,6 +1108,10 @@ function OrderDetail({ orderId, can, onDone }) {
             <div className="note-block"><span className="note-label">ملاحظة الإدارة</span><p>{order.admin_note}</p></div>
           )}
 
+          {!FINAL_STATUSES.includes(order.status) && can("orders.review") && (
+  <EditableItemsPanel order={order} onChanged={reload} />
+)}
+
           {order.status === "shortage" && can("orders.review") && (
             <>
               <h2 className="subsection-heading">النواقص بانتظار الحل</h2>
