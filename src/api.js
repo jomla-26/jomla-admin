@@ -119,6 +119,7 @@ removeOrderItem: (orderId, itemId) => request(`/orders/${orderId}/items/${itemId
 
 bulkOrderStatus: (body) => request("/orders/bulk-status", { method: "PATCH", body }),
 adminCreateOrder: (body) => request("/orders/admin-create", { method: "POST", body }),
+  changeFulfillment: (orderId, body) => request(`/orders/${orderId}/fulfillment`, { method: "PATCH", body }),
   order: (id) => request(`/orders/${id}`),
   approveOrder: (id, body = {}) => request(`/orders/${id}/approve`, { method: "POST", body }),
   rejectOrder: (id, body) => request(`/orders/${id}/reject`, { method: "POST", body }),
