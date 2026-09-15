@@ -900,6 +900,138 @@ function ShortageRow({ shortage: sh, onResolved }) {
   );
 }
 
+/* ===================================================================
+   إضافة تعديل الفاتورة إلى OrderDetail — 3 قطع منفصلة:
+   1) مكوّن EditableItemsPanel جديد (يُضاف كدالة مستقلة)
+   2) استدعاؤه من داخل OrderDetail (تعديل صغير)
+   =================================================================== */
+
+/* ---- القطعة 1: أضف هذه الدالة بعد نهاية ShortageRow وقبل OrderDetail ---- */
+
+function EditableItemsPanel({ order, onChanged }) {
+  const [addingProduct, setAddingProduct] = useState(false);
+  const [sectionId, setSectionId] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [editQty, setEditQty] = useState("");
+
+  const sections = useFetch(() => api.sections(), []);
+  const products = useFetch(
+    (s) => (sectionId ? api.products({ sectionId }, s) : Promise.resolve([])),
+    [sectionId]
+  );
+
+  const addItem = useAction((productId, qty) => api.addOrderItem(order.id, { productId, qty }));
+  const updateItem = useAction((itemId, qty) => api.updateOrderItem(order.id, itemId, { qty }));
+  const removeItem = useAction((itemId) => api.removeOrderItem(order.id, itemId));
+
+  const filteredProducts = (products.data ?? []).filter((p) =>
+    !productSearch.trim() || p.name.includes(productSearch.trim())
+  );
+
+  const allItems = order.suppliers.flatMap((s) =>
+    s.items.map((i) => ({ ...i, supplier_name: s.supplier_name }))
+  );
+
+  function startEdit(item) {
+    setEditingItemId(item.id);
+    setEditQty(String(item.qty_confirmed ?? item.qty_requested));
+  }
+
+  return (
+    <div className="invoice-block" style={{ marginBottom: 16 }}>
+      <div className="invoice-head">
+        <span>تعديل الفاتورة</span>
+        <button className="invoice-action-btn" onClick={() => setAddingProduct((v) => !v)}>
+          {addingProduct ? "إغلاق" : "إضافة صنف"}
+        </button>
+      </div>
+
+      {(addItem.error || updateItem.error || removeItem.error) && (
+        <p className="field-error" style={{ margin: "8px 16px 0" }}>
+          {addItem.error || updateItem.error || removeItem.error}
+        </p>
+      )}
+
+      {addingProduct && (
+        <div className="sections-editor">
+          <label className="field-label">القسم</label>
+          <div className="section-chip-row" style={{ marginBottom: 12 }}>
+            {(sections.data ?? []).map((s) => (
+              <button key={s.id} className={"chip" + (sectionId === s.id ? " chip-active" : "")}
+                onClick={() => setSectionId(s.id)}>{s.name}</button>
+            ))}
+          </div>
+          {sectionId && (
+            <>
+              <SearchBar value={productSearch} onChange={setProductSearch} placeholder="ابحث عن صنف..." />
+              {products.loading ? <Spinner /> : (
+                <table className="data-table" style={{ marginBottom: 0 }}>
+                  <thead><tr><th>الصنف</th><th>السعر التقديري</th><th></th></tr></thead>
+                  <tbody>
+                    {filteredProducts.map((p) => (
+                      <tr key={p.id}>
+                        <td>{p.name}</td>
+                        <td className="cell-muted">{money(p.base_price)} / {p.unit}</td>
+                        <td>
+                          <button className="invoice-action-btn" disabled={addItem.pending}
+                            onClick={() => addItem.run(p.id, 1).then(() => {
+                              onChanged(); setAddingProduct(false); setSectionId(""); setProductSearch("");
+                            }).catch(() => {})}>
+                            إضافة
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!filteredProducts.length && (
+                      <tr><td colSpan={3} className="cell-muted">لا توجد أصناف مطابقة</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {allItems.map((i) => (
+        <div className="invoice-line" key={i.id}>
+          <span className="invoice-line-name">
+            {i.product_name} <i>({i.supplier_name})</i>
+          </span>
+          {editingItemId === i.id ? (
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input className="qty-input" type="number" min="1" value={editQty} style={{ width: 65 }}
+                onChange={(e) => setEditQty(e.target.value)} />
+              <button className="invoice-action-btn" disabled={updateItem.pending}
+                onClick={() => updateItem.run(i.id, Number(editQty)).then(() => {
+                  onChanged(); setEditingItemId(null);
+                }).catch(() => {})}>
+                حفظ
+              </button>
+              <button className="invoice-action-btn" onClick={() => setEditingItemId(null)}>إلغاء</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <span className="invoice-line-price">
+                {i.qty_confirmed ?? i.qty_requested} {i.unit} — {money(i.line_total)}
+              </span>
+              <button className="invoice-action-btn" onClick={() => startEdit(i)}>تعديل</button>
+              <button className="invoice-action-btn" disabled={removeItem.pending}
+                onClick={() => {
+                  if (!window.confirm(`حذف "${i.product_name}" من الفاتورة؟`)) return;
+                  removeItem.run(i.id).then(onChanged).catch(() => {});
+                }}>
+                حذف
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function OrderDetail({ orderId, can, onDone }) {
   const { data: order, loading, error, reload } = useFetch((s) => api.order(orderId, s), [orderId]);
   const [rejecting, setRejecting] = useState(false);
