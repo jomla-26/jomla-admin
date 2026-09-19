@@ -142,6 +142,12 @@ export const api = {
     request(`/orders/supplier-parts/${osId}/mark-ready`, { method: "POST" }),
   setOrderSupplierCommissionRate: (osId, commissionRate) =>
     request(`/orders/order-suppliers/${osId}/commission-rate`, { method: "PATCH", body: { commissionRate } }),
+  bulkOrderStatus: (body) => request("/orders/bulk-status", { method: "PATCH", body }),
+  changeFulfillment: (id, body) => request(`/orders/${id}/fulfillment`, { method: "PATCH", body }),
+  adminCreateOrder: (body) => request("/orders/admin-create", { method: "POST", body }),
+  addOrderItem: (orderId, body) => request(`/orders/${orderId}/items`, { method: "POST", body }),
+  updateOrderItem: (orderId, itemId, body) => request(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body }),
+  removeOrderItem: (orderId, itemId) => request(`/orders/${orderId}/items/${itemId}`, { method: "DELETE" }),
 
   /* المالية */
 
@@ -174,6 +180,8 @@ vouchers: (params) => request("/finance/vouchers", { params }),
   accounts: (kind, params) => request(`/accounts/${kind}`, { params }),
   account: (kind, id) => request(`/accounts/${kind}/${id}`),
   createAccount: (kind, body) => request(`/accounts/${kind}`, { method: "POST", body }),
+  updateAccount: (kind, id, body) => request(`/accounts/${kind}/${id}`, { method: "PATCH", body }),
+  deleteAccount: (kind, id) => request(`/accounts/${kind}/${id}`, { method: "DELETE" }),
   approveAccount: (kind, id, sectionIds = []) =>
     request(`/accounts/${kind}/${id}/approve`, { method: "POST", body: { sectionIds } }),
   rejectAccount: (kind, id) => request(`/accounts/${kind}/${id}/reject`, { method: "POST" }),
