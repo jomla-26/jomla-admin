@@ -145,6 +145,7 @@ export const api = {
     request(`/orders/order-suppliers/${osId}/commission-rate`, { method: "PATCH", body: { commissionRate } }),
   bulkOrderStatus: (body) => request("/orders/bulk-status", { method: "PATCH", body }),
   changeFulfillment: (id, body) => request(`/orders/${id}/fulfillment`, { method: "PATCH", body }),
+  updateDeliveryFee: (id, body) => request(`/orders/${id}/delivery-fee`, { method: "PATCH", body }),
   adminCreateOrder: (body) => request("/orders/admin-create", { method: "POST", body }),
   addOrderItem: (orderId, body) => request(`/orders/${orderId}/items`, { method: "POST", body }),
   updateOrderItem: (orderId, itemId, body) => request(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body }),
