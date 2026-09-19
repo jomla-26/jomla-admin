@@ -176,6 +176,8 @@ vouchers: (params) => request("/finance/vouchers", { params }),
   deleteEmployee: (id) => request(`/employees/${id}`, { method: "DELETE" }),
   employeePermissions: (id) => request(`/employees/${id}/permissions`),
   updateEmployeePermissions: (id, body) => request(`/employees/${id}/permissions`, { method: "PATCH", body }),
+  employeeSectionScope: (id) => request(`/employees/${id}/section-scope`),
+  updateEmployeeSectionScope: (id, body) => request(`/employees/${id}/section-scope`, { method: "PATCH", body }),
 
   /* الحسابات (عملاء وموردون) */
   accounts: (kind, params) => request(`/accounts/${kind}`, { params }),
