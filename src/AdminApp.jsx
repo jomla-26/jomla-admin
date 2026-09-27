@@ -2707,7 +2707,7 @@ function AddBannerForm({ onClose, onCreated }) {
     setUploadError(""); setUploading(true);
     api.uploadImage(file)
       .then((res) => setImageUrl(res.url))
-      .catch(() => setUploadError("تعذّر رفع الصورة — تحقق من الحجم (5 ميجا كحد أقصى) والنوع (jpg أو png أو webp)"))
+      .catch((err) => setUploadError(err?.message || "تعذّر رفع الصورة — حاول مرة أخرى"))
       .finally(() => setUploading(false));
   }
 
@@ -2772,7 +2772,7 @@ function SectionsSettings({ can }) {
     setUploadError(""); setUploading(true);
     api.uploadImage(file)
       .then((res) => setImageUrl(res.url))
-      .catch(() => setUploadError("تعذّر رفع الصورة — تحقق من الحجم (5 ميجا كحد أقصى) والنوع (jpg أو png أو webp)"))
+      .catch((err) => setUploadError(err?.message || "تعذّر رفع الصورة — حاول مرة أخرى"))
       .finally(() => setUploading(false));
   }
 
