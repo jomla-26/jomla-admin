@@ -604,14 +604,14 @@ function CreateOrderView({ onCreated }) {
   const [vehiclesCount, setVehiclesCount] = useState(1);
   const [sectionId, setSectionId] = useState("");
   const [productSearch, setProductSearch] = useState("");
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState([]); const [priceTick, setPriceTick] = useState(0); useEffect(() => { if (!sectionId) return; const t = setInterval(() => setPriceTick((x) => x + 1), 20000); return () => clearInterval(t); }, [sectionId]);
 
   const customers = useFetch((s) => api.accounts("customer", { status: "approved" }, s), []);
   const zones = useFetch((s) => api.deliveryZones(s).catch(() => []), []);
   const vehicleTypes = useFetch((s) => api.vehicleTypes(s).catch(() => []), []);
   const products = useFetch(
     (s) => (sectionId ? api.products({ sectionId }, s) : Promise.resolve([])),
-    [sectionId]
+    [sectionId, priceTick]
   );
 
   const customer = (customers.data ?? []).find((c) => c.id === customerId);
