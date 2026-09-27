@@ -860,12 +860,12 @@ function buildInvoiceHTML({ order, supplierName, items, subtotal, includeDeliver
   box-shadow:0 1px 3px rgba(24,29,42,.06),0 1px 2px rgba(24,29,42,.04)}
 header{display:flex;justify-content:space-between;border-bottom:2px solid #ecedf2;padding-bottom:20px;margin-bottom:24px}
 .brand{font-family:'Cairo',sans-serif;font-weight:800;font-size:32px;color:#ff6a1a;margin:0}
-.brand small{display:block;font-family:'Tajawal',sans-serif;font-weight:500;font-size:14px;color:#6b7280;margin-top:6px}
+.brand small{display:block;font-family:'Tajawal',sans-serif;font-weight:500;font-size:14px;color:#4b5563;margin-top:6px}
 .doc-title{font-family:'Cairo',sans-serif;font-weight:800;font-size:22px;text-align:left;margin:0}
-.doc-meta{font-size:13.5px;font-weight:500;color:#6b7280;text-align:left;margin-top:8px;line-height:2}
+.doc-meta{font-size:13.5px;font-weight:500;color:#4b5563;text-align:left;margin-top:8px;line-height:2}
 .parties{display:flex;gap:14px;margin-bottom:24px}
 .party{flex:1;border:none;background:#f4f5f9;border-radius:14px;padding:14px 16px}
-.party h3{font-family:'Cairo',sans-serif;font-weight:700;font-size:12.5px;margin:0 0 8px;color:#6b7280}
+.party h3{font-family:'Cairo',sans-serif;font-weight:700;font-size:12.5px;margin:0 0 8px;color:#4b5563}
 .party p{margin:0;font-size:15.5px;font-weight:700;color:#181d2a}
 table{width:100%;border-collapse:separate;border-spacing:0;margin-bottom:20px;border-radius:14px;overflow:hidden;
   box-shadow:0 1px 3px rgba(24,29,42,.06)}
@@ -873,17 +873,17 @@ thead th{background:#181d2a;color:#fff;padding:12px;font-size:13px;
   font-family:'Cairo',sans-serif;font-weight:700;text-align:right}
 tbody td{border-bottom:1px solid #ecedf2;padding:12px;font-size:14.5px;font-weight:500;color:#181d2a;background:#fff}
 tbody tr:last-child td{border-bottom:none}
-tbody td:first-child{width:36px;text-align:center;font-weight:700;color:#6b7280}
-td.sku-cell{font-family:'Tajawal',sans-serif;font-weight:700;text-align:center;color:#6b7280}
+tbody td:first-child{width:36px;text-align:center;font-weight:700;color:#4b5563}
+td.sku-cell{font-family:'Tajawal',sans-serif;font-weight:700;text-align:center;color:#4b5563}
 .totals{width:340px;margin-right:auto}
 .totals table{margin:0;box-shadow:none;border-radius:14px;overflow:hidden}
-.totals td{font-size:14.5px;font-weight:600;color:#6b7280;background:#f4f5f9;border-bottom:1px solid #ecedf2}
+.totals td{font-size:14.5px;font-weight:600;color:#4b5563;background:#f4f5f9;border-bottom:1px solid #ecedf2}
 .totals td:last-child{font-family:'Cairo',sans-serif;font-weight:800;text-align:left;color:#181d2a}
 .totals tr.grand td{background:#ff6a1a;color:#fff;font-size:17px;border-bottom:none}
 .totals tr.grand td:last-child{color:#fff}
-.sign{margin-top:44px;display:flex;gap:60px;font-size:13.5px;font-weight:600;color:#6b7280}
+.sign{margin-top:44px;display:flex;gap:60px;font-size:13.5px;font-weight:600;color:#4b5563}
 .sign div{flex:1;border-top:1px solid #ecedf2;padding-top:8px}
-footer{margin-top:34px;border-top:1px solid #ecedf2;padding-top:16px;font-size:12.5px;font-weight:500;color:#6b7280;
+footer{margin-top:34px;border-top:1px solid #ecedf2;padding-top:16px;font-size:12.5px;font-weight:500;color:#4b5563;
 display:flex;justify-content:space-between}
 .pdf-toolbar{position:sticky;top:0;z-index:10;display:flex;gap:10px;justify-content:center;
   background:#181d2a;padding:12px;margin-bottom:20px;border-radius:14px}
@@ -898,7 +898,7 @@ display:flex;justify-content:space-between}
 </div>
 <div class="sheet">
 <header><div><img src="${LOGO_FULL}" alt="${COMPANY.name}" style="height:56px;width:auto;display:block;margin-bottom:12px"/>
-<p style="margin:0;font-size:13.5px;font-weight:500;color:#6b7280;line-height:1.9">${COMPANY.address}<br/>${COMPANY.phone}</p></div>
+<p style="margin:0;font-size:13.5px;font-weight:500;color:#4b5563;line-height:1.9">${COMPANY.address}<br/>${COMPANY.phone}</p></div>
 <div><h2 class="doc-title">${esc(title)}</h2><div class="doc-meta">
 رقم الفاتورة: <strong style="color:#181d2a">${order.order_number}</strong><br/>التاريخ: ${day(order.created_at)}<br/>
 الحالة: ${statusLabel(order.status)}</div></div></header>
@@ -3707,14 +3707,14 @@ function buildStockVoucherPdfHTML(data) {
 header{display:flex;justify-content:space-between;border-bottom:2px solid #ecedf2;padding-bottom:16px;margin-bottom:20px}
 .brand{font-family:'Cairo',sans-serif;font-weight:800;font-size:26px;color:#ff6a1a;margin:0}
 .doc-title{font-family:'Cairo',sans-serif;font-weight:800;font-size:18px;text-align:left;margin:0}
-.doc-meta{font-size:12.5px;color:#6b7280;text-align:left;margin-top:6px;line-height:1.8}
-.sku{font-size:11px;color:#6b7280}
+.doc-meta{font-size:12.5px;color:#4b5563;text-align:left;margin-top:6px;line-height:1.8}
+.sku{font-size:11px;color:#4b5563}
 table{width:100%;border-collapse:separate;border-spacing:0;margin-bottom:18px;border-radius:14px;overflow:hidden;
   box-shadow:0 1px 3px rgba(24,29,42,.06)}
 thead th{background:#181d2a;color:#fff;padding:10px;font-size:12.5px;text-align:right;font-family:'Cairo',sans-serif;font-weight:700}
 tbody td{border-bottom:1px solid #ecedf2;padding:10px;font-size:13px;background:#fff}
 tbody tr:last-child td{border-bottom:none}
-tbody td:first-child{width:40px;text-align:center;color:#6b7280}
+tbody td:first-child{width:40px;text-align:center;color:#4b5563}
 .pdf-toolbar{position:sticky;top:0;z-index:10;display:flex;gap:10px;justify-content:center;
   background:#181d2a;padding:12px;margin-bottom:20px;border-radius:14px}
 .pdf-toolbar button{background:#ff6a1a;color:#fff;border:none;padding:10px 20px;font-family:'Cairo',sans-serif;
@@ -4638,9 +4638,9 @@ function buildVoucherHTML(v, balance, partyType) {
   .badge{display:inline-block;background:#ff6a1a;color:#fff;font-family:'Cairo',sans-serif;font-weight:700;
     font-size:11.5px;border-radius:999px;padding:5px 14px;margin-bottom:10px}
   h1{font-family:'Cairo',sans-serif;font-size:20px;text-align:center;margin:0 0 4px;color:#181d2a}
-  .sub{text-align:center;color:#6b7280;font-size:12px;margin:0 0 20px}
+  .sub{text-align:center;color:#4b5563;font-size:12px;margin:0 0 20px}
   .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #ecedf2;font-size:14px}
-  .words{font-size:12.5px;color:#6b7280;padding:10px 0;border-bottom:1px solid #ecedf2}
+  .words{font-size:12.5px;color:#4b5563;padding:10px 0;border-bottom:1px solid #ecedf2}
   .total{font-family:'Cairo',sans-serif;font-weight:800;font-size:18px;color:#fff;
     background:#181d2a;border-radius:14px;margin-top:14px;padding:14px 16px;border-bottom:none}
   @media print{.pdf-toolbar{display:none}body{background:#fff}.sheet{margin:0;box-shadow:none;border-radius:0}}
