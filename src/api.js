@@ -109,6 +109,7 @@ export const api = {
   products: (params) => request("/catalog/products", { params }),
   createProduct: (body) => request("/catalog/products", { method: "POST", body }),
   updateProduct: (id, body) => request(`/catalog/products/${id}`, { method: "PATCH", body }),
+  approveProduct: (id, body) => request(`/catalog/products/${id}/approval`, { method: "PATCH", body }),
   productMovement: (id) => request(`/catalog/products/${id}/movement`),
   salesReport: (period) => request("/catalog/products/me/report", { params: { period } }),
   inventoryReport: (params) => request("/catalog/inventory-report", { params }),
