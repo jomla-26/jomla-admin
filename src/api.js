@@ -109,6 +109,7 @@ export const api = {
   products: (params) => request("/catalog/products", { params }),
   createProduct: (body) => request("/catalog/products", { method: "POST", body }),
   updateProduct: (id, body) => request(`/catalog/products/${id}`, { method: "PATCH", body }),
+  deleteProduct: (id) => request(`/catalog/products/${id}`, { method: "DELETE" }),
   approveProduct: (id, body) => request(`/catalog/products/${id}/approval`, { method: "PATCH", body }),
   productVariants: (productId) => request(`/catalog/products/${productId}/variants`),
   createProductVariant: (productId, body) => request(`/catalog/products/${productId}/variants`, { method: "POST", body }),
@@ -305,5 +306,19 @@ orderMessages: (orderId, orderSupplierId) => request(`/engagement/orders/${order
     if (!res.ok) throw new ApiError(res.status, payload.error || "تعذّر رفع الصورة");
     const origin = new URL(BASE_URL, window.location.origin).origin;
     return { ...payload, url: new URL(payload.url, origin).href };
+  },
+
+  // رفع صور أصناف دفعة وحدة — اسم كل ملف (بدون الامتداد) لازم يكون نفس رقم
+  // الصنف عند المورد (supplier_sku) بالضبط عشان تتحدد وجهتها الصح
+  uploadProductImagesBulk: async (files, supplierId) => {
+    const form = new FormData();
+    for (const f of files) form.append("images", f);
+    if (supplierId) form.append("supplierId", supplierId);
+    const headers = {};
+    if (session.token) headers.Authorization = `Bearer ${session.token}`;
+    const res = await fetch(`${BASE_URL}/uploads/product-images/bulk`, { method: "POST", headers, body: form });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, payload.error || "تعذّر رفع الصور");
+    return payload;
   },
 };
