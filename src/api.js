@@ -111,6 +111,7 @@ export const api = {
   updateProduct: (id, body) => request(`/catalog/products/${id}`, { method: "PATCH", body }),
   deleteProduct: (id) => request(`/catalog/products/${id}`, { method: "DELETE" }),
   approveProduct: (id, body) => request(`/catalog/products/${id}/approval`, { method: "PATCH", body }),
+  productHistory: (productId) => request(`/catalog/products/${productId}/history`),
   productVariants: (productId) => request(`/catalog/products/${productId}/variants`),
   createProductVariant: (productId, body) => request(`/catalog/products/${productId}/variants`, { method: "POST", body }),
   updateProductVariant: (id, body) => request(`/catalog/product-variants/${id}`, { method: "PATCH", body }),
