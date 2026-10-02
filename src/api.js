@@ -133,6 +133,8 @@ export const api = {
   order: (id) => request(`/orders/${id}`),
   approveOrder: (id, body = {}) => request(`/orders/${id}/approve`, { method: "POST", body }),
   confirmOrderTransfer: (id, amount) => request(`/orders/${id}/confirm-transfer`, { method: "POST", body: { amount } }),
+  setRemainingCollector: (id, supplierId) =>
+    request(`/orders/${id}/remaining-collector`, { method: "POST", body: { supplierId } }),
   rejectOrder: (id, body) => request(`/orders/${id}/reject`, { method: "POST", body }),
   setOrderStatus: (id, body) => request(`/orders/${id}/status`, { method: "PATCH", body }),
   setAvailability: (osId, body) =>
