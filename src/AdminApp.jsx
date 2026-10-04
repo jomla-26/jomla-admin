@@ -5,7 +5,7 @@ import {
   Printer, FileText, Loader2, Wrench, Settings, Star, MessageCircle,
   RotateCcw, Fuel, Send, History, Bell, Image as ImageIcon, Download,
 } from "lucide-react";
-import { api } from "./api.js";
+import { api, session } from "./api.js";
 import { useSession, useFetch, useAction } from "./hooks.js";
 import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -42,12 +42,27 @@ const STATUS_LABELS = {
 };
 const statusLabel = (s) => STATUS_LABELS[s] || s;
 // يسأل الموظف عن المبلغ المعدود فعليًا عند استلام نقدية المندوب — أي فرق يُسجَّل تلقائيًا
-const askDeclaredCash = (name, expected) => {
-  const raw = window.prompt(`المبلغ المعدود فعليًا من ${name}\n(المحسوب: ${Number(expected).toFixed(2)} د.ل)`, Number(expected).toFixed(2));
+// expected = المطلوب فعليًا من المندوب تسليمه (handover_expected) بعد خصم ما صرفه من نقديته لموردين/استرجاع عهدة؛
+// inHand = إجمالي نقدية الطلبيات المعلّقة بحوزته (cash_in_hand) — لو أكبر من expected نوضّح الفرق للموظف.
+const askDeclaredCash = (name, expected, inHand) => {
+  const exp = Number(expected ?? 0);
+  const hand = Number(inHand ?? exp);
+  const extra = hand - exp > 0.004 ? `\n(إجمالي المحصّل المعلّق ${hand.toFixed(2)} د.ل، منه ${(hand - exp).toFixed(2)} د.ل صرفها المندوب من نقديته)` : "";
+  const raw = window.prompt(`المبلغ المعدود فعليًا من ${name}\n(المطلوب تسليمه حسب الحساب: ${exp.toFixed(2)} د.ل)${extra}`, exp.toFixed(2));
   if (raw === null) return null;
   const v = Number(String(raw).replace(",", "."));
-  if (!Number.isFinite(v) || v <= 0) { window.alert("أدخل مبلغًا صحيحًا"); return null; }
+  if (!Number.isFinite(v) || v < 0) { window.alert("أدخل مبلغًا صحيحًا"); return null; }
+  if (v === 0 && exp > 0 && !window.confirm("المبلغ صفر — يعني المندوب ما سلّم أي مبلغ. تأكيد؟")) return null;
   return v;
+};
+// ملخص نتيجة التسوية من الخادم: الصافي المطلوب + الفرق (لو وُجد)
+const settleSummary = (r) => {
+  if (!r) return "";
+  const parts = [`تمت التسوية — المطلوب فعليًا: ${money(r.total)}`];
+  if (r.grossCod != null && Number(r.grossCod) !== Number(r.total)) parts.push(`إجمالي المحصّل: ${money(r.grossCod)}`);
+  parts.push(`المستلم: ${money(r.declaredAmount)}`);
+  if (Number(r.discrepancy) !== 0) parts.push(`${Number(r.discrepancy) > 0 ? "زيادة" : "نقص"}: ${money(Math.abs(r.discrepancy))}`);
+  return parts.join("\n");
 };
 const FINAL_STATUSES = ["delivered", "cancelled", "closed"];
 
@@ -583,9 +598,13 @@ function AllOrdersView({ onOpen }) {
     if (!res) return;
     reload();
     clearSelection();
-    const msg = res.skippedCount
-      ? `تم تحويل ${res.updatedCount} طلبية، وتخطي ${res.skippedCount} (راجع السبب لكل واحدة)`
-      : `تم تحويل ${res.updatedCount} طلبية بنجاح`;
+    const skipped = Array.isArray(res.skipped) ? res.skipped : [];
+    let msg = `تم تحويل ${res.updatedCount ?? 0} طلبية بنجاح`;
+    if (res.skippedCount) {
+      const shown = skipped.slice(0, 15).map((k) => `• ${k.orderNumber || k.orderId || "—"}: ${k.reason}`).join("\n");
+      const more = skipped.length > 15 ? `\n… و${skipped.length - 15} أخرى` : "";
+      msg = `تم تحويل ${res.updatedCount ?? 0} طلبية، وتخطي ${res.skippedCount}:\n${shown}${more}`;
+    }
     alert(msg);
   }
 
@@ -701,7 +720,7 @@ function CreateOrderView({ onCreated }) {
   const [productSearch, setProductSearch] = useState("");
   const [items, setItems] = useState([]); const [priceTick, setPriceTick] = useState(0); useEffect(() => { if (!sectionId) return; const t = setInterval(() => setPriceTick((x) => x + 1), 20000); return () => clearInterval(t); }, [sectionId]);
 
-  const customers = useFetch((s) => api.accounts("customer", { status: "approved" }, s), []);
+  const customers = useFetch((s) => api.accounts("customer", { status: "approved", limit: 1000 }, s), []);
   const zones = useFetch((s) => api.deliveryZones(s).catch(() => []), []);
   const vehicleTypes = useFetch((s) => api.vehicleTypes(s).catch(() => []), []);
   const products = useFetch(
@@ -1719,7 +1738,7 @@ function AccountsView({ can }) {
 
   const sectionsList = useFetch(() => api.sections(), []);
   const { data, loading, error, reload } = useFetch(
-    () => api.accounts(kind, { status: status === "all" ? undefined : status, search: query.trim() || undefined }),
+    () => api.accounts(kind, { status: status === "all" ? undefined : status, search: query.trim() || undefined, limit: 1000 }),
     [kind, status, query]
   );
 
@@ -1748,7 +1767,7 @@ function AccountsView({ can }) {
       </div>
 
       {showAdd && (
-        <AddAccountForm kind={kind} sections={sectionsList.data ?? []}
+        <AddAccountForm kind={kind} can={can} sections={sectionsList.data ?? []}
           onClose={() => setShowAdd(false)} onDone={reload} />
       )}
 
@@ -1832,7 +1851,7 @@ function AccountsView({ can }) {
                   </tr>
                   {editingId === a.id && (
                     <tr><td colSpan={8}>
-                      <SectionsEditor kind={kind} account={a} sections={sectionsList.data ?? []}
+                      <SectionsEditor kind={kind} can={can} account={a} sections={sectionsList.data ?? []}
                         onDone={() => { reload(); setEditingId(null); }} />
                     </td></tr>
                   )}
@@ -1945,12 +1964,17 @@ function CreditToggle({ account, onDone }) {
   );
 }
 
-function SectionsEditor({ kind, account, sections, onDone }) {
+function SectionsEditor({ kind, can, account, sections, onDone }) {
   const enabledIds = (account.sections || []).filter((s) => s.enabled).map((s) => s.id);
   const [picked, setPicked] = useState(enabledIds);
   const pending = account.status === "pending";
+  // المورد: نسبة العمولة تحددها الإدارة عند الاعتماد (مو النسبة اللي كتبها المورد بنفسه)
+  const needsRate = pending && kind === "supplier";
+  const canSetRate = typeof can === "function" && can("finance.commission");
+  const [rate, setRate] = useState("");
+  const rateValid = rate !== "" && Number(rate) >= 0 && Number(rate) <= 100;
   const save = useAction(() => api.setAccountSections(kind, account.id, picked));
-  const approve = useAction(() => api.approveAccount(kind, account.id, picked));
+  const approve = useAction(() => api.approveAccount(kind, account.id, picked, needsRate ? Number(rate) : undefined));
   const error = save.error || approve.error;
 
   return (
@@ -1963,10 +1987,24 @@ function SectionsEditor({ kind, account, sections, onDone }) {
           </button>
         ))}
       </div>
+      {needsRate && (
+        <div style={{ margin: "12px 0" }}>
+          <label className="field-label">نسبة عمولة جملة على مبيعات هذا المورد (%) — إجبارية للاعتماد</label>
+          {account.commission_rate_requested != null && (
+            <p className="hint">النسبة التي كتبها المورد عند التسجيل (للعلم فقط): {Number(account.commission_rate_requested)}%</p>
+          )}
+          {canSetRate ? (
+            <input className="field-input" style={{ maxWidth: 160 }} type="number" min="0" max="100" step="0.5"
+              value={rate} onChange={(e) => setRate(e.target.value)} placeholder="مثال: 10" />
+          ) : (
+            <p className="field-error">اعتماد مورد يتطلب تحديد نسبة العمولة، وهذا يحتاج موظفًا بصلاحية «تعديل نسبة عمولة المورد».</p>
+          )}
+        </div>
+      )}
       {error && <p className="field-error">{error}</p>}
       <div className="add-form-actions">
         {pending ? (
-          <button className="btn-primary" disabled={approve.pending}
+          <button className="btn-primary" disabled={approve.pending || (needsRate && (!canSetRate || !rateValid))}
             onClick={() => approve.run().then(onDone).catch(() => {})}>
             {approve.pending ? "جارٍ الاعتماد…" : "اعتماد الحساب بالأقسام المحددة"}
           </button>
@@ -1982,7 +2020,7 @@ function SectionsEditor({ kind, account, sections, onDone }) {
   );
 }
 
-function AddAccountForm({ kind, sections, onClose, onDone }) {
+function AddAccountForm({ kind, can, sections, onClose, onDone }) {
   const [form, setForm] = useState({ name: "", phone: "", address: "", person: "", commissionRate: "" });
   const [picked, setPicked] = useState([]);
   const [location, setLocation] = useState(null);
@@ -2001,7 +2039,8 @@ function AddAccountForm({ kind, sections, onClose, onDone }) {
     ...(kind === "supplier" ? { commissionRate: Number(form.commissionRate) } : {}),
   }));
 
-  const valid = form.name.trim() && form.phone.replace(/\D/g, "").length >= 9
+  const canSetRate = kind !== "supplier" || (typeof can === "function" && can("finance.commission"));
+  const valid = form.name.trim() && form.phone.replace(/\D/g, "").length >= 9 && canSetRate
     && (kind !== "supplier" || (form.commissionRate !== "" && Number(form.commissionRate) >= 0));
 
   return (
@@ -2023,6 +2062,9 @@ function AddAccountForm({ kind, sections, onClose, onDone }) {
               <label className="field-label">نسبة العمولة المتفق عليها (%)</label>
               <input className="field-input" type="number" min="0" max="100" step="0.5"
                 value={form.commissionRate} onChange={set("commissionRate")} placeholder="مثال: 10" />
+              {!canSetRate && (
+                <p className="field-error">إضافة مورد تتطلب صلاحية «تعديل نسبة عمولة المورد».</p>
+              )}
             </>
           )}
           <label className="field-label">الأقسام {kind === "customer" ? "المسموح بها" : "التي يعمل بها"}</label>
@@ -2168,7 +2210,7 @@ function EmployeesView({ can, onGo }) {
   const [floatFor, setFloatFor] = useState(null);   // { driver_id, name } | null — الاسم اتوارث من مكوّن المندوب، يشتغل لأي موظف
   const [returnFor, setReturnFor] = useState(null); // { driver_id, name, balance } | null
 
-  const employees = useFetch((s) => api.employees({ status: statusFilter }, s), [statusFilter]);
+  const employees = useFetch((s) => api.employees({ status: statusFilter, limit: 1000 }, s), [statusFilter]);
   const roles = useFetch((s) => api.employeeRoles(s), []);
   const drivers = useFetch((s) => api.driversCash(s), []);
   const wallets = useFetch((s) => api.employeeWallets(s), []);
@@ -2266,12 +2308,12 @@ function EmployeesView({ can, onGo }) {
                           تعديل
                         </button>
                       )}
-                      {can("employees.manage") && (
+                      {can("employees.manage") && e.id !== session.actor?.id && (
                         <button className="invoice-action-btn" onClick={() => setPermsEmployee(e)}>
                           الصلاحيات الفردية
                         </button>
                       )}
-                      {can("employees.manage") && (
+                      {can("employees.manage") && e.id !== session.actor?.id && (
                         <ToggleEmployeeButton employee={e} onDone={refresh} />
                       )}
                       {can("finance.vouchers") && (
@@ -2517,6 +2559,8 @@ function EditEmployeeForm({ employee, roles, onClose, onDone }) {
     monthlySalary: employee.monthly_salary || "",
   });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // الموظف ما يغيّر وظيفته ولا راتبه بنفسه (يمنعه الخادم أيضًا)
+  const isSelf = employee.id === session.actor?.id;
 
   const save = useAction(() => api.updateEmployee(employee.id, {
     name: form.name.trim() !== employee.name ? form.name.trim() : undefined,
@@ -2537,11 +2581,12 @@ function EditEmployeeForm({ employee, roles, onClose, onDone }) {
       <input className="field-input" value={form.phone} onChange={set("phone")}
         dir="ltr" style={{ textAlign: "right" }} inputMode="numeric" placeholder="09XXXXXXXX" />
       <label className="field-label">الوظيفة والصلاحيات</label>
-      <select className="field-input" value={form.roleCode} onChange={set("roleCode")}>
+      <select className="field-input" value={form.roleCode} onChange={set("roleCode")} disabled={isSelf}>
         {roles.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
       </select>
       <label className="field-label">الراتب الشهري (د.ل)</label>
-      <input className="field-input" type="number" min="0" value={form.monthlySalary} onChange={set("monthlySalary")} />
+      <input className="field-input" type="number" min="0" value={form.monthlySalary} onChange={set("monthlySalary")} disabled={isSelf} />
+      {isSelf && <p className="hint">لا يمكنك تعديل وظيفتك أو راتبك بنفسك.</p>}
       {save.error && <p className="field-error">{save.error}</p>}
       <div className="add-form-actions">
         <button className="btn-primary" disabled={!valid || save.pending}
@@ -2784,7 +2829,7 @@ function DeliveryView({ can }) {
       <table className="data-table">
         <thead>
           <tr><th>المندوب</th><th>طلبيات مسندة</th><th>مسلّمة</th><th>كاش محصّل</th>
-            <th>مسلّم للشركة</th><th>المتبقي بحوزته</th><th></th></tr>
+            <th>مسلّم للشركة</th><th>المتبقي بحوزته</th><th>المطلوب تسليمه</th><th></th></tr>
         </thead>
         <tbody>
           {(data ?? []).map((d) => (
@@ -2794,13 +2839,14 @@ function DeliveryView({ can }) {
               <td className="cell-muted">{d.orders_delivered}</td>
               <td className="cell-muted">{money(d.cash_collected)}</td>
               <td className="cell-muted">{money(d.cash_settled)}</td>
-              <td className={Number(d.cash_in_hand) > 0 ? "cell-amount cell-debt" : "cell-amount"}>
-                {money(d.cash_in_hand)}
+              <td className="cell-muted">{money(d.cash_in_hand)}</td>
+              <td className={Number(d.handover_expected ?? d.cash_in_hand) > 0 ? "cell-amount cell-debt" : "cell-amount"}>
+                {money(d.handover_expected ?? d.cash_in_hand)}
               </td>
               <td>
                 {Number(d.cash_in_hand) > 0 && can("finance.vouchers") && (
                   <button className="invoice-action-btn" disabled={settle.pending}
-                    onClick={() => { const amt = askDeclaredCash(d.name, d.cash_in_hand); if (amt == null) return; settle.run(d.driver_id, amt).then(reload).catch(() => {}); }}>
+                    onClick={() => { const amt = askDeclaredCash(d.name, d.handover_expected ?? d.cash_in_hand, d.cash_in_hand); if (amt == null) return; settle.run(d.driver_id, amt).then((r) => { window.alert(settleSummary(r)); reload(); }).catch(() => {}); }}>
                     <Check size={14} /> استلام النقدية
                   </button>
                 )}
@@ -3124,7 +3170,17 @@ function CatalogProductRow({ product: p, can, onDone, checked, onCheck, showSupp
   );
 }
 
-// سجل الصنف: حركات المخزون + كل التعديل (قبل/بعد) واسم من عدّل
+// سجل الصنف: حركات المخزون + كل التعديل — لكل تغيير: من (الاسم + النوع) ومتى وأي حقل وقبل ← بعد
+function HistoryThumb({ url }) {
+  if (!url) return <span className="cell-muted">بدون صورة</span>;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" style={{ display: "inline-block", verticalAlign: "middle" }}>
+      <img src={url} alt="" loading="lazy"
+        style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid var(--rule, #ddd)" }} />
+    </a>
+  );
+}
+
 function ProductHistoryPanel({ productId }) {
   const { data, loading, error, reload } = useFetch(() => api.productHistory(productId), [productId]);
   const when = (at) => {
@@ -3133,29 +3189,45 @@ function ProductHistoryPanel({ productId }) {
   if (loading) return <Spinner />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   const items = data?.items ?? [];
+  const approvalRow = (it) => it.action === "product.resubmitted" || it.action === "product.updated_resubmitted";
   return (
     <div style={{ padding: "10px 8px" }}>
-      <p className="hint">سجل «{data?.product?.name}» — كل تغيير بقيمته قبل وبعد واسم الشخص اللي قام به.</p>
+      <p className="hint">سجل «{data?.product?.name}» — كل تغيير: من قام به، ومتى، وقيمته قبل وبعد.</p>
       {!items.length ? <p className="cell-muted">لا توجد حركات أو تعديلات مسجّلة بعد</p> : (
         <div className="ledger-list">
           {items.map((it) => (
             <div className="ledger-row" key={it.id} style={{ display: "block", padding: "8px 0", borderTop: "1px solid var(--rule, #e5e5e5)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                <b>{it.title}{it.variant_label ? ` — ${it.variant_label}` : ""}</b>
-                <span className="cell-muted">{when(it.at)} · بواسطة {it.actor_name || "—"}</span>
+                <b style={approvalRow(it) || it.action === "product.rejected" ? { color: "var(--warn, #b45309)" } : undefined}>
+                  {it.title}{it.variant_label ? ` — ${it.variant_label}` : ""}
+                </b>
+                <span className="cell-muted">
+                  {when(it.at)} · من: {it.actor_name || "—"}{it.actor_type_label ? ` (${it.actor_type_label})` : ""}
+                </span>
               </div>
-              {it.kind === "stock" && (
+              {it.qty_change != null && (
                 <div>
                   <span className={it.qty_change >= 0 ? "cell-amount" : "cell-amount cell-debt"}>
                     {it.qty_change >= 0 ? "+" : ""}{it.qty_change}
                   </span>
-                  <span className="cell-muted"> — {it.reason}</span>
+                  {it.reason && <span className="cell-muted"> — {it.reason}</span>}
                 </div>
               )}
+              {it.qty_change == null && it.reason && <div className="cell-muted">السبب: {it.reason}</div>}
               {it.changes?.map((c, i) => (
-                <div key={i} className="cell-muted">
-                  {c.label}: <span style={{ textDecoration: "line-through" }}>{c.from}</span> ← <b style={{ color: "var(--ink)" }}>{c.to}</b>
-                </div>
+                c.type === "image" ? (
+                  <div key={i} className="cell-muted" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                    <span>من: {it.actor_name || "—"} — تغيير الصورة — قبل:</span>
+                    <HistoryThumb url={c.from} />
+                    <span>←  بعد:</span>
+                    <HistoryThumb url={c.to} />
+                  </div>
+                ) : (
+                  <div key={i} className="cell-muted">
+                    {c.label} — من: {it.actor_name || "—"} — قبل: <span style={{ textDecoration: "line-through" }}>{c.from}</span>
+                    {" ← "}بعد: <b style={{ color: "var(--ink)" }}>{c.to}</b>
+                  </div>
+                )
               ))}
             </div>
           ))}
@@ -3171,7 +3243,7 @@ function InventoryExportPanel({ shown, selected, onClearSelected, supplierName, 
   const [mode, setMode] = useState(selectedList.length ? "selected" : "filtered");
   const run = useAction(async () => {
     let list;
-    if (mode === "all") list = await api.products({});
+    if (mode === "all") list = await api.products({ limit: 5000 });
     else if (mode === "selected") list = selectedList;
     else list = shown;
     if (!list?.length) throw new Error("ما في أصناف للتصدير بالاختيار هذا");
@@ -4734,19 +4806,32 @@ function ProfitReport() {
               <span>صافي الربح</span>
               <b className={data.netProfit >= 0 ? "" : "cell-debt"}>{money(data.netProfit)}</b>
             </div>
+            {data.totalDeliveryFees != null && (
+              <div className="stat-tile">
+                <span>رسوم التوصيل المحصّلة</span><b>{money(data.totalDeliveryFees)}</b>
+              </div>
+            )}
+            {data.netProfitWithDelivery != null && (
+              <div className="stat-tile">
+                <span>صافي الربح مع رسوم التوصيل</span>
+                <b className={data.netProfitWithDelivery >= 0 ? "" : "cell-debt"}>{money(data.netProfitWithDelivery)}</b>
+              </div>
+            )}
           </div>
 
           <h2 className="subsection-heading">التفصيل حسب الفترة</h2>
           {!data.series.length ? <Empty icon={BarChart2} text="لا توجد بيانات في هذه الفترة" /> : (
             <table className="data-table">
-              <thead><tr><th>الفترة</th><th>العمولة</th><th>المصروفات</th><th>الصافي</th></tr></thead>
+              <thead><tr><th>الفترة</th><th>العمولة</th><th>رسوم التوصيل</th><th>المصروفات</th><th>الصافي</th><th>الصافي مع التوصيل</th></tr></thead>
               <tbody>
                 {data.series.map((r) => (
                   <tr key={r.bucket}>
                     <td className="cell-muted">{(BUCKET_FMT[groupBy] || day)(r.bucket)}</td>
                     <td className="cell-amount">{money(r.commission)}</td>
+                    <td className="cell-muted">{money(r.deliveryFees)}</td>
                     <td className="cell-muted">{money(r.expenses)}</td>
                     <td className={r.netProfit >= 0 ? "cell-amount" : "cell-amount cell-debt"}>{money(r.netProfit)}</td>
+                    <td className={(r.netProfitWithDelivery ?? r.netProfit) >= 0 ? "cell-amount" : "cell-amount cell-debt"}>{money(r.netProfitWithDelivery ?? r.netProfit)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -4762,7 +4847,7 @@ function ProfitReport() {
 
 function StockVouchersAdminScreen() {
   const [supplierId, setSupplierId] = useState("");
-  const suppliers = useFetch((s) => api.accounts("supplier", { status: "approved" }, s), []);
+  const suppliers = useFetch((s) => api.accounts("supplier", { status: "approved", limit: 1000 }, s), []);
 
   return (
     <>
@@ -4864,25 +4949,36 @@ function AdminStockVoucherForm({ supplierId, voucherType, products, onClose, onS
 
   const submit = useAction(() => api.createStockVoucher({
     voucherType, supplierId, reason: reason.trim(),
-    items: cart.map((c) => ({ productId: c.productId, qty: Number(c.qty) })),
+    // الصنف ذو الأنواع يُحدَّد فيه النوع (variantId)، والصنف العادي بـ productId
+    items: cart.map((c) => c.variantId
+      ? { productId: c.productId, variantId: c.variantId, qty: Number(c.qty) }
+      : { productId: c.productId, qty: Number(c.qty) }),
   }));
+
+  // كل نوع يظهر كسطر مستقل (الكمية على مستوى النوع)، والصنف العادي كسطر واحد
+  const entries = products.flatMap((p) => (p.variants?.length
+    ? p.variants.map((v) => ({
+        key: v.id, productId: p.id, variantId: v.id, name: `${p.name} — ${v.label}`,
+        unit: p.unit, sku: v.sku, stockQty: v.stockQty,
+      }))
+    : [{ key: p.id, productId: p.id, variantId: null, name: p.name, unit: p.unit, sku: p.supplier_sku, stockQty: p.stock_qty }]));
 
   const q = query.trim();
   // تظهر كل أصناف المورد فورًا (بلا داعي للكتابة الأول)، والبحث يصفّي فيها بعد كذا
-  const results = products
-    .filter((p) => !cart.some((c) => c.productId === p.id)
-      && (!q || p.name.includes(q) || (p.supplier_sku && p.supplier_sku.includes(q))))
+  const results = entries
+    .filter((e) => !cart.some((c) => c.key === e.key)
+      && (!q || e.name.includes(q) || (e.sku && String(e.sku).includes(q))))
     .slice(0, q ? 8 : 50);
 
-  function addToCart(p) {
-    setCart((c) => [...c, { productId: p.id, name: p.name, unit: p.unit, stockQty: p.stock_qty, qty: 1 }]);
+  function addToCart(e) {
+    setCart((c) => [...c, { ...e, qty: 1 }]);
     setQuery("");
   }
-  function setQty(productId, qty) {
-    setCart((c) => c.map((x) => x.productId === productId ? { ...x, qty } : x));
+  function setQty(key, qty) {
+    setCart((c) => c.map((x) => x.key === key ? { ...x, qty } : x));
   }
-  function removeFromCart(productId) {
-    setCart((c) => c.filter((x) => x.productId !== productId));
+  function removeFromCart(key) {
+    setCart((c) => c.filter((x) => x.key !== key));
   }
 
   const valid = cart.length > 0 && cart.every((c) => Number(c.qty) > 0) && reason.trim().length >= 2;
@@ -4900,10 +4996,10 @@ function AdminStockVoucherForm({ supplierId, voucherType, products, onClose, onS
           <table className="data-table">
             <tbody>
               {results.map((p) => (
-                <tr className="data-row" key={p.id} onClick={() => addToCart(p)}>
+                <tr className="data-row" key={p.key} onClick={() => addToCart(p)}>
                   <td className="cell-id">{p.name}</td>
-                  <td className="cell-muted">{p.unit} {p.supplier_sku ? `· #${p.supplier_sku}` : ""}</td>
-                  <td className="cell-muted">الحالية: {p.stock_qty}</td>
+                  <td className="cell-muted">{p.unit} {p.sku ? `· #${p.sku}` : ""}</td>
+                  <td className="cell-muted">الحالية: {p.stockQty}</td>
                   <td><Plus size={16} /></td>
                 </tr>
               ))}
@@ -4920,14 +5016,14 @@ function AdminStockVoucherForm({ supplierId, voucherType, products, onClose, onS
           <thead><tr><th>الصنف</th><th>الكمية الحالية</th><th>{isIn ? "المضافة" : "المخصومة"}</th><th></th></tr></thead>
           <tbody>
             {cart.map((c) => (
-              <tr key={c.productId}>
+              <tr key={c.key}>
                 <td className="cell-id">{c.name} <span className="cell-muted">({c.unit})</span></td>
                 <td className="cell-muted">{c.stockQty}</td>
                 <td>
                   <input type="number" min="1" className="qty-input" value={c.qty}
-                    onChange={(e) => setQty(c.productId, Math.max(1, Number(e.target.value) || 1))} />
+                    onChange={(e) => setQty(c.key, Math.max(1, Number(e.target.value) || 1))} />
                 </td>
-                <td><button className="link-btn" onClick={() => removeFromCart(c.productId)}>حذف</button></td>
+                <td><button className="link-btn" onClick={() => removeFromCart(c.key)}>حذف</button></td>
               </tr>
             ))}
           </tbody>
@@ -4978,9 +5074,9 @@ function AdminStockVoucherDetail({ voucherId, onClose }) {
             <tbody>
               {data.lines.map((l) => (
                 <tr key={l.id}>
-                  <td className="cell-id">{l.product_name}</td>
+                  <td className="cell-id">{l.product_name}{l.variant_label ? ` — ${l.variant_label}` : ""}</td>
                   <td className="cell-muted">{l.unit}</td>
-                  <td className="cell-muted">{l.supplier_sku || "—"}</td>
+                  <td className="cell-muted">{l.variant_sku || l.supplier_sku || "—"}</td>
                   <td className={Number(l.change_qty) >= 0 ? "cell-amount" : "cell-amount cell-debt"}>
                     {Number(l.change_qty) >= 0 ? "+" : ""}{l.change_qty}
                   </td>
@@ -4999,7 +5095,7 @@ function AdminStockVoucherDetail({ voucherId, onClose }) {
 
 function buildStockVoucherPdfHTML(data) {
   const { voucher, lines } = data;
-  const rows = lines.map((l, n) => `<tr><td>${n + 1}</td><td>${esc(l.product_name)}${l.supplier_sku ? ` <span class="sku">#${esc(l.supplier_sku)}</span>` : ""}</td>
+  const rows = lines.map((l, n) => `<tr><td>${n + 1}</td><td>${esc(l.product_name)}${l.variant_label ? ` — ${esc(l.variant_label)}` : ""}${(l.variant_sku || l.supplier_sku) ? ` <span class="sku">#${esc(l.variant_sku || l.supplier_sku)}</span>` : ""}</td>
     <td>${esc(l.unit)}</td><td>${Number(l.change_qty) >= 0 ? "+" : ""}${l.change_qty}</td></tr>`).join("");
   const title = voucher.voucher_type === "addition" ? "فاتورة إضافة مخزون" : "فاتورة خصم مخزون";
 
@@ -5841,7 +5937,7 @@ function TreasuryReport({ onGo }) {
         <SearchBar inline value={query} onChange={setQuery} placeholder="ابحث برقم الإيصال أو الاسم..." />
       </div>
 
-      {form === "transfer" ? <TransferForm onClose={() => setForm(null)} onDone={refresh} />
+      {form === "transfer" ? <TransferForm treasuries={treasuries.data ?? []} onClose={() => setForm(null)} onDone={refresh} />
        : form === "expense" ? <ExpenseForm onClose={() => setForm(null)} onDone={refresh} />
        : form && <VoucherForm type={form} onClose={() => setForm(null)} onDone={refresh} />}
 
@@ -5869,7 +5965,7 @@ function TreasuryReport({ onGo }) {
             <table className="data-table">
               <thead>
                 <tr><th>المندوب</th><th>طلبيات مسندة</th><th>مسلّمة</th><th>كاش محصّل</th>
-                  <th>مسلّم للشركة</th><th>المتبقي بحوزته</th><th>رصيد العهدة</th><th></th></tr>
+                  <th>مسلّم للشركة</th><th>المتبقي بحوزته</th><th>المطلوب تسليمه</th><th>رصيد العهدة</th><th></th></tr>
               </thead>
               <tbody>
                 {drivers.data.map((d) => (
@@ -5879,8 +5975,9 @@ function TreasuryReport({ onGo }) {
                     <td className="cell-muted">{d.orders_delivered}</td>
                     <td className="cell-muted">{money(d.cash_collected)}</td>
                     <td className="cell-muted">{money(d.cash_settled)}</td>
-                    <td className={Number(d.cash_in_hand) > 0 ? "cell-amount cell-debt" : "cell-amount"}>
-                      {money(d.cash_in_hand)}
+                    <td className="cell-muted">{money(d.cash_in_hand)}</td>
+                    <td className={Number(d.handover_expected ?? d.cash_in_hand) > 0 ? "cell-amount cell-debt" : "cell-amount"}>
+                      {money(d.handover_expected ?? d.cash_in_hand)}
                     </td>
                     <td className={Number(d.wallet_balance) > 0 ? "cell-amount cell-debt" : "cell-amount"}>
                       {money(d.wallet_balance)}
@@ -5888,7 +5985,7 @@ function TreasuryReport({ onGo }) {
                     <td className="cell-actions-col">
                       {Number(d.cash_in_hand) > 0 && (
                         <button className="invoice-action-btn" disabled={settleDriver.pending}
-                          onClick={() => { const amt = askDeclaredCash(d.name, d.cash_in_hand); if (amt == null) return; settleDriver.run(d.driver_id, amt).then(refresh).catch(() => {}); }}>
+                          onClick={() => { const amt = askDeclaredCash(d.name, d.handover_expected ?? d.cash_in_hand, d.cash_in_hand); if (amt == null) return; settleDriver.run(d.driver_id, amt).then((r) => { window.alert(settleSummary(r)); refresh(); }).catch(() => {}); }}>
                           <Check size={14} /> استلام النقدية
                         </button>
                       )}
@@ -6449,35 +6546,62 @@ function DriverLedgerView({ id, name }) {
   );
 }
 
-function TransferForm({ onClose, onDone }) {
+function TransferForm({ treasuries = [], onClose, onDone }) {
+  // كل الخزائن (المبيعات / الرئيسية / الحوالات) تصلح مصدرًا ووجهة في الاتجاهين
+  const FALLBACK = [
+    { code: "sales", name: "خزينة المبيعات" }, { code: "main", name: "الخزينة الرئيسية" }, { code: "hawala", name: "خزينة الحوالات" },
+  ];
+  const list = treasuries.length ? treasuries : FALLBACK;
   const [form, setForm] = useState({ fromCode: "sales", toCode: "main", amount: "", note: "" });
   const create = useAction(() => api.transfers({
     fromCode: form.fromCode, toCode: form.toCode,
     amount: Number(form.amount), note: form.note || undefined,
   }));
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const source = list.find((t) => t.code === form.fromCode);
+  const sourceBalance = source && source.balance != null ? Number(source.balance) : null;
+  const amountNum = Number(form.amount);
+  const same = form.fromCode === form.toCode;
+  const insufficient = sourceBalance != null && amountNum > sourceBalance;
+
+  // لو اختار المستخدم نفس الخزينة في الجهتين نبدّل الجهة الثانية لأول خزينة مختلفة
+  function pick(k) {
+    return (e) => {
+      const v = e.target.value;
+      setForm((f) => {
+        const next = { ...f, [k]: v };
+        const other = k === "fromCode" ? "toCode" : "fromCode";
+        if (next[other] === v) next[other] = (list.find((t) => t.code !== v) || {}).code || next[other];
+        return next;
+      });
+    };
+  }
 
   return (
     <div className="detail-card voucher-form">
       <h2 className="subsection-heading">تحويل بين الخزائن</h2>
-      <p className="hint">يُستخدم عند استلام موظف المالية للمبالغ المحصّلة وترحيلها للخزينة الرئيسية.</p>
+      <p className="hint">حرّك الفلوس بين أي خزينتين في الاتجاهين: من البنك/الحوالات للخزائن النقدية أو من النقدية للبنك.</p>
 
       <label className="field-label">من</label>
-      <select className="field-input" value={form.fromCode} onChange={set("fromCode")}>
-        <option value="sales">خزينة المبيعات</option><option value="main">الخزينة الرئيسية</option>
+      <select className="field-input" value={form.fromCode} onChange={pick("fromCode")}>
+        {list.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
       </select>
+      {sourceBalance != null && (
+        <p className="hint">الرصيد المتاح في {source.name}: <b>{money(sourceBalance)}</b></p>
+      )}
       <label className="field-label">إلى</label>
-      <select className="field-input" value={form.toCode} onChange={set("toCode")}>
-        <option value="main">الخزينة الرئيسية</option><option value="sales">خزينة المبيعات</option>
+      <select className="field-input" value={form.toCode} onChange={pick("toCode")}>
+        {list.map((t) => <option key={t.code} value={t.code} disabled={t.code === form.fromCode}>{t.name}</option>)}
       </select>
       <label className="field-label">المبلغ (د.ل)</label>
       <input className="field-input" type="number" min="0" value={form.amount} onChange={set("amount")} />
+      {insufficient && <p className="field-error">المبلغ أكبر من رصيد {source.name} ({money(sourceBalance)})</p>}
       <label className="field-label">ملاحظة</label>
       <input className="field-input" value={form.note} onChange={set("note")} placeholder="اختياري" />
 
       {create.error && <p className="field-error">{create.error}</p>}
       <div className="add-form-actions">
-        <button className="btn-primary" disabled={create.pending || !form.amount || form.fromCode === form.toCode}
+        <button className="btn-primary" disabled={create.pending || !(amountNum > 0) || same || insufficient}
           onClick={() => create.run().then(() => { onDone(); onClose(); }).catch(() => {})}>
           {create.pending ? "جارٍ التحويل…" : "تأكيد التحويل"}
         </button>

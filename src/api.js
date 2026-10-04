@@ -7,6 +7,11 @@ const BASE_URL = import.meta.env?.VITE_API_URL || "/api";
 const TOKEN_KEY = "jomla_token";
 const ACTOR_KEY = "jomla_actor";
 
+// الخادم صار يرجّع 200 صف افتراضيًا للقوائم الكبيرة (حد أقصى 1000، والطلبيات 500).
+// الشاشات اللي تتوقع القائمة كاملة تطلب الحد الأقصى هنا — وأي شاشة تقدر تمرّر limit خاص بها.
+const FULL_LIST = 1000;
+const FULL_ORDERS = 500;
+
 /* ----------------------------- الجلسة ----------------------------- */
 
 export const session = {
@@ -43,6 +48,55 @@ export class ApiError extends Error {
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 
+/* ---------------- إيقاف الحساب / عدم تفعيله (403) ----------------
+   الخادم يرد 403 برمز ACCOUNT_BLOCKED لما يكون الحساب موقوف أو بانتظار الاعتماد أو الموظف معطّل.
+   هذا مختلف عن 403 "ما عندك صلاحية" (ما نطلّع المستخدم منها). */
+const BLOCKED_MSG_RE = /(تم إيقاف هذا الحساب|حسابك غير مفعّل|حسابك لم يُعتمد|هذا الحساب غير متاح)/;
+
+function showLogoutNotice(message) {
+  try {
+    if (typeof document === "undefined") return;
+    document.getElementById("jomla-logout-notice")?.remove();
+    const el = document.createElement("div");
+    el.id = "jomla-logout-notice";
+    el.setAttribute("role", "alert");
+    el.dir = "rtl";
+    el.textContent = message;
+    el.style.cssText = "position:fixed;top:12px;left:12px;right:12px;z-index:99999;max-width:520px;margin:0 auto;"
+      + "padding:14px 16px;border-radius:12px;background:#7a1f1f;color:#fff;font:600 15px/1.6 Tajawal,Cairo,sans-serif;"
+      + "text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.25);cursor:pointer";
+    el.onclick = () => el.remove();
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 12000);
+  } catch { /* تجاهل */ }
+}
+
+/** true لو الرد 403 بسبب إيقاف/عدم تفعيل الحساب (مو نقص صلاحية، ومو أخطاء شاشة الدخول) */
+export function isAccountBlocked(status, payload, path = "") {
+  if (status !== 403) return false;
+  if (payload?.code === "ACCOUNT_BLOCKED") return true;
+  return !String(path).startsWith("/auth/otp") && BLOCKED_MSG_RE.test(payload?.error || "");
+}
+
+/**
+ * للمساعدات التي تستدعي fetch مباشرة (خارج request): تعالج 401 وإيقاف الحساب بنفس منطق request().
+ * تمسح الجلسة، ترجّع التطبيق لشاشة الدخول، وتعرض الرسالة الواضحة، ثم ترمي ApiError.
+ */
+export function guardAuthFailure(status, payload, path = "") {
+  if (status === 401) {
+    session.clear();
+    onUnauthorized();
+    throw new ApiError(401, "انتهت الجلسة، يرجى تسجيل الدخول من جديد");
+  }
+  if (isAccountBlocked(status, payload, path)) {
+    const msg = payload?.error || "تم إيقاف هذا الحساب، يرجى التواصل مع الدعم الفني";
+    session.clear();
+    onUnauthorized();
+    showLogoutNotice(msg);
+    throw new ApiError(403, msg);
+  }
+}
+
 async function request(path, { method = "GET", body, params, signal } = {}) {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin);
   if (params) {
@@ -76,6 +130,7 @@ async function request(path, { method = "GET", body, params, signal } = {}) {
   if (res.status === 204) return null;
 
   const payload = await res.json().catch(() => ({}));
+  guardAuthFailure(res.status, payload, path);
   if (!res.ok) {
     throw new ApiError(res.status, payload.error || "حدث خطأ غير متوقع", payload.details);
   }
@@ -131,7 +186,7 @@ export const api = {
 
   /* الطلبيات */
   createOrder: (body) => request("/orders", { method: "POST", body }),
-  orders: (params) => request("/orders", { params }),
+  orders: (params) => request("/orders", { params: { limit: FULL_ORDERS, ...params } }),
   order: (id) => request(`/orders/${id}`),
   approveOrder: (id, body = {}) => request(`/orders/${id}/approve`, { method: "POST", body }),
   confirmOrderTransfer: (id, amount) => request(`/orders/${id}/confirm-transfer`, { method: "POST", body: { amount } }),
@@ -163,12 +218,13 @@ export const api = {
 
   /* المالية */
 
-vouchers: (params) => request("/finance/vouchers", { params }),
+vouchers: (params) => request("/finance/vouchers", { params: { limit: FULL_LIST, ...params } }),
   createVoucher: (body) => request("/finance/vouchers", { method: "POST", body }),
   decideVoucher: (id, body) => request(`/finance/vouchers/${id}/decide`, { method: "POST", body }),
   transfers: (body) => request("/finance/transfers", { method: "POST", body }),
   treasuries: () => request("/finance/treasuries"),
-  settleDriver: (id, declaredAmount) => request(`/finance/drivers/${id}/settle`, { method: "POST", body: declaredAmount ? { declaredAmount } : {} }),
+  // declaredAmount = 0 مسموح (المندوب ما سلّم شي) — لازم يوصل للخادم كـ 0 مش يُحذف
+  settleDriver: (id, declaredAmount) => request(`/finance/drivers/${id}/settle`, { method: "POST", body: declaredAmount == null ? {} : { declaredAmount } }),
   driversCash: () => request("/finance/drivers/cash"),
   giveDriverFloat: (id, body) => request(`/finance/drivers/${id}/float`, { method: "POST", body }),
   returnDriverFloat: (id, body) => request(`/finance/drivers/${id}/return-float`, { method: "POST", body }),
@@ -178,17 +234,17 @@ vouchers: (params) => request("/finance/vouchers", { params }),
   paySalary: (body) => request("/finance/salaries", { method: "POST", body }),
   customerLedger: (id) => request(`/finance/ledger/customer/${id}`),
   supplierLedger: (id) => request(`/finance/ledger/supplier/${id}`),
-  customerBalances: () => request("/finance/balances/customers"),
-  supplierBalances: () => request("/finance/balances/suppliers"),
+  customerBalances: () => request("/finance/balances/customers", { params: { limit: FULL_LIST } }),
+  supplierBalances: () => request("/finance/balances/suppliers", { params: { limit: FULL_LIST } }),
   voucherData: (id) => request(`/finance/vouchers/me/${id}`),
-  myVouchers: () => request("/finance/vouchers/mine"),
+  myVouchers: () => request("/finance/vouchers/mine", { params: { limit: FULL_LIST } }),
   expenses: (params) => request("/finance/expenses", { params }),
   expensesSummary: () => request("/finance/expenses/summary"),
   createExpense: (body) => request("/finance/expenses", { method: "POST", body }),
   profitReport: (params) => request("/finance/profit-report", { params }),
 
   /* الموظفون */
-  employees: (params) => request("/employees", { params }),
+  employees: (params) => request("/employees", { params: { limit: FULL_LIST, ...params } }),
   employeeRoles: () => request("/employees/roles"),
   createEmployee: (body) => request("/employees", { method: "POST", body }),
   updateEmployee: (id, body) => request(`/employees/${id}`, { method: "PATCH", body }),
@@ -199,20 +255,24 @@ vouchers: (params) => request("/finance/vouchers", { params }),
   updateEmployeeSectionScope: (id, body) => request(`/employees/${id}/section-scope`, { method: "PATCH", body }),
 
   /* الحسابات (عملاء وموردون) */
-  accounts: (kind, params) => request(`/accounts/${kind}`, { params }),
+  accounts: (kind, params) => request(`/accounts/${kind}`, { params: { limit: FULL_LIST, ...params } }),
   account: (kind, id) => request(`/accounts/${kind}/${id}`),
   createAccount: (kind, body) => request(`/accounts/${kind}`, { method: "POST", body }),
   updateAccount: (kind, id, body) => request(`/accounts/${kind}/${id}`, { method: "PATCH", body }),
   deleteAccount: (kind, id) => request(`/accounts/${kind}/${id}`, { method: "DELETE" }),
-  approveAccount: (kind, id, sectionIds = []) =>
-    request(`/accounts/${kind}/${id}/approve`, { method: "POST", body: { sectionIds } }),
+  // commissionRate: إجبارية عند اعتماد مورد جديد (يحددها المعتمِد بصلاحية العمولة)
+  approveAccount: (kind, id, sectionIds = [], commissionRate) =>
+    request(`/accounts/${kind}/${id}/approve`, {
+      method: "POST",
+      body: commissionRate === undefined ? { sectionIds } : { sectionIds, commissionRate },
+    }),
   rejectAccount: (kind, id) => request(`/accounts/${kind}/${id}/reject`, { method: "POST" }),
   setAccountSections: (kind, id, sectionIds) =>
     request(`/accounts/${kind}/${id}/sections`, { method: "PATCH", body: { sectionIds } }),
   setCustomerCredit: (id, body) => request(`/accounts/customer/${id}/credit`, { method: "PATCH", body }),
   setSupplierCommissionRate: (id, commissionRate) =>
     request(`/accounts/supplier/${id}/commission-rate`, { method: "PATCH", body: { commissionRate } }),
-  auditLogs: (params) => request("/accounts/audit/logs", { params }),
+  auditLogs: (params) => request("/accounts/audit/logs", { params: { limit: 500, ...params } }),
 
   /* إعدادات التوصيل */
   deliveryZones: () => request("/delivery/zones"),
@@ -249,7 +309,7 @@ orderMessages: (orderId, orderSupplierId) => request(`/engagement/orders/${order
   sendSupportMessage: (body) => request("/support/mine", { method: "POST", body: { body } }),
 
   /* صندوق الدعم الفني — لوحة الإدارة، مفصول حسب النوع: customer / supplier / driver */
-  adminSupportThreads: (type) => request("/support/threads", { params: { type } }),
+  adminSupportThreads: (type) => request("/support/threads", { params: { type, limit: 500 } }),
   adminSupportThread: (type, actorId) => request(`/support/threads/${type}/${actorId}`),
   adminSendSupportMessage: (type, actorId, body) =>
     request(`/support/threads/${type}/${actorId}`, { method: "POST", body: { body } }),
@@ -307,6 +367,7 @@ orderMessages: (orderId, orderSupplierId) => request(`/engagement/orders/${order
     if (session.token) headers.Authorization = `Bearer ${session.token}`;
     const res = await fetch(`${BASE_URL}/uploads/image`, { method: "POST", headers, body: form });
     const payload = await res.json().catch(() => ({}));
+    guardAuthFailure(res.status, payload, "/uploads");
     if (!res.ok) throw new ApiError(res.status, payload.error || "تعذّر رفع الصورة");
     const origin = new URL(BASE_URL, window.location.origin).origin;
     return { ...payload, url: new URL(payload.url, origin).href };
@@ -322,6 +383,7 @@ orderMessages: (orderId, orderSupplierId) => request(`/engagement/orders/${order
     if (session.token) headers.Authorization = `Bearer ${session.token}`;
     const res = await fetch(`${BASE_URL}/uploads/product-images/bulk`, { method: "POST", headers, body: form });
     const payload = await res.json().catch(() => ({}));
+    guardAuthFailure(res.status, payload, "/uploads");
     if (!res.ok) throw new ApiError(res.status, payload.error || "تعذّر رفع الصور");
     return payload;
   },
