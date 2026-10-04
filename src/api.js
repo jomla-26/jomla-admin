@@ -115,6 +115,7 @@ export const api = {
   productVariants: (productId) => request(`/catalog/products/${productId}/variants`),
   createProductVariant: (productId, body) => request(`/catalog/products/${productId}/variants`, { method: "POST", body }),
   updateProductVariant: (id, body) => request(`/catalog/product-variants/${id}`, { method: "PATCH", body }),
+  adjustVariantStock: (id, body) => request(`/catalog/product-variants/${id}/adjust-stock`, { method: "POST", body }),
   deleteProductVariant: (id) => request(`/catalog/product-variants/${id}`, { method: "DELETE" }),
   productMovement: (id) => request(`/catalog/products/${id}/movement`),
   salesReport: (period) => request("/catalog/products/me/report", { params: { period } }),
