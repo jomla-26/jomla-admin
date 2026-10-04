@@ -715,7 +715,7 @@ function CreateOrderView({ onCreated }) {
   const filteredCustomers = (customers.data ?? []).filter((c) =>
     !customerQuery.trim() || c.business_name.includes(customerQuery.trim()) || (c.phone || "").includes(customerQuery.trim())
   );
-  // الصنف اللي عنده خيارات (ألوان/مقاسات) يظهر سطر لكل خيار بسعره الخاص
+  // الصنف اللي عنده أنواع (ألوان/مقاسات) يظهر سطر لكل نوع بسعره الخاص
   const filteredProducts = (products.data ?? []).flatMap((p) =>
     p.variants?.length
       ? p.variants.map((v) => ({ ...p, rowKey: `${p.id}:${v.id}`, variantId: v.id, variantLabel: v.label,
@@ -1261,7 +1261,7 @@ function AddItemRow({ product: p, addItem, onAdded }) {
         {hasVariants && (
           <select className="field-input" style={{ marginTop: 4 }} value={variantId}
             onChange={(e) => setVariantId(e.target.value)}>
-            <option value="">اختر الخيار</option>
+            <option value="">اختر النوع</option>
             {variants.map((v) => <option key={v.id} value={v.id}>{v.label} ({money(v.price)})</option>)}
           </select>
         )}
@@ -2963,7 +2963,7 @@ function CatalogProductsPane({ can, onChanged }) {
                         return next;
                       })} />
                   </th>
-                  <th>صورة</th><th>الصنف</th><th>كود الصنف</th><th>القسم</th><th>السعر</th><th>الكمية</th><th></th>
+                  <th>صورة</th><th>الصنف</th><th>الأنواع</th><th>كود الصنف</th><th>القسم</th><th>السعر</th><th>الكمية</th><th></th>
                 </tr></thead>
                 <tbody>
                   {g.items.map((p) => (
@@ -3021,7 +3021,7 @@ function CatalogProductRow({ product: p, can, onDone, checked, onCheck, showSupp
   if (!editing) {
     return (
       <>
-        <tr>
+        <tr style={p.variants?.length > 0 ? { background: "rgba(34,197,94,.07)" } : undefined}>
           {selectable && <td><input type="checkbox" checked={!!checked} onChange={(e) => onCheck(e.target.checked)} /></td>}
           <td>
             {p.image_url
@@ -3031,22 +3031,24 @@ function CatalogProductRow({ product: p, can, onDone, checked, onCheck, showSupp
           </td>
           <td className="cell-id">
             {p.name}
-            {p.variants?.length > 0 && <span className="status-pill status-pill-approved" style={{ marginRight: 6 }}>{p.variants.length} خيارات</span>}
             {p.approval_status === "pending" && <span className="status-pill" style={{ marginRight: 6 }}>بانتظار الموافقة</span>}
             {p.is_active === false && <span className="status-pill" style={{ marginRight: 6 }}>موقوف</span>}
             {showSupplier && <div className="cell-muted" style={{ fontSize: 12 }}>المورد: {p.supplier_name}</div>}
           </td>
-          <td className="cell-muted" dir="ltr" style={{ textAlign: "right" }}>
+          <td>
             {p.variants?.length > 0
-              ? (p.variants.map((v) => v.sku).filter(Boolean).join("، ") || "—")
-              : (p.supplier_sku || "—")}
+              ? <span className="status-pill status-pill-approved">{p.variants.length} أنواع</span>
+              : <span className="cell-muted">—</span>}
+          </td>
+          <td className="cell-muted" dir="ltr" style={{ textAlign: "right" }}>
+            {p.variants?.length > 0 ? <span dir="rtl">حسب النوع</span> : (p.supplier_sku || "—")}
           </td>
           <td className="cell-muted">{p.section_name}</td>
           <td>{money(p.base_price)}</td>
           <td className="cell-muted">{p.stock_qty}</td>
           <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button className="invoice-action-btn" onClick={() => setEditing(true)}>تعديل</button>
-            <button className="invoice-action-btn" onClick={() => setShowVariants((v) => !v)}>الخيارات</button>
+            <button className="invoice-action-btn" onClick={() => setShowVariants((v) => !v)}>الأنواع</button>
             <button className="invoice-action-btn" onClick={() => setShowHistory((v) => !v)}>{showHistory ? "إغلاق السجل" : "السجل"}</button>
             {can("accounts.sections") && (
               <button className="invoice-action-btn" disabled={toggle.pending} onClick={() => toggle.run().then(onDone).catch(() => {})}>
@@ -3064,12 +3066,12 @@ function CatalogProductRow({ product: p, can, onDone, checked, onCheck, showSupp
           </td>
         </tr>
         {showVariants && (
-          <tr><td colSpan={selectable ? 8 : 7} style={{ background: "var(--paper)" }}>
+          <tr><td colSpan={selectable ? 9 : 8} style={{ background: "var(--paper)" }}>
             <AdminVariantsManager product={p} />
           </td></tr>
         )}
         {showHistory && (
-          <tr><td colSpan={selectable ? 8 : 7} style={{ background: "var(--paper)" }}>
+          <tr><td colSpan={selectable ? 9 : 8} style={{ background: "var(--paper)" }}>
             <ProductHistoryPanel productId={p.id} />
           </td></tr>
         )}
@@ -3094,7 +3096,12 @@ function CatalogProductRow({ product: p, can, onDone, checked, onCheck, showSupp
       </td>
       <td>
         {p.variants?.length > 0
-          ? <span className="cell-muted">الكود على كل خيار</span>
+          ? <span className="status-pill status-pill-approved">{p.variants.length} أنواع</span>
+          : <span className="cell-muted">—</span>}
+      </td>
+      <td>
+        {p.variants?.length > 0
+          ? <span className="cell-muted">الكود على كل نوع</span>
           : <input className="field-input" dir="ltr" placeholder="كود الصنف" value={sku} onChange={(e) => setSku(e.target.value)} />}
       </td>
       <td>
@@ -3175,12 +3182,12 @@ function InventoryExportPanel({ shown, selected, onClearSelected, supplierName, 
       const state = p.is_active === false ? "موقوف" : p.approval_status === "pending" ? "بانتظار الموافقة" : "نشط";
       if (p.variants?.length) {
         return p.variants.map((v) => ({
-          ...base, "الخيار": v.label, "الكود": v.sku || "", "وحدة البيع": p.unit,
+          ...base, "النوع": v.label, "الكود": v.sku || "", "وحدة البيع": p.unit,
           "السعر (د.ل)": Number(v.price), "الكمية": Number(v.stockQty), "الحالة": state,
         }));
       }
       return [{
-        ...base, "الخيار": "", "الكود": p.supplier_sku || "", "وحدة البيع": p.unit,
+        ...base, "النوع": "", "الكود": p.supplier_sku || "", "وحدة البيع": p.unit,
         "السعر (د.ل)": Number(p.base_price), "الكمية": Number(p.stock_qty), "الحالة": state,
       }];
     });
@@ -3212,7 +3219,7 @@ function InventoryExportPanel({ shown, selected, onClearSelected, supplierName, 
         onClick={() => run.run().catch(() => {})}>
         {run.pending ? "جارٍ التجهيز…" : "تصدير"}
       </button>
-      <p className="hint">الصنف اللي له خيارات يطلع سطر لكل خيار بكوده وسعره وكميته.</p>
+      <p className="hint">الصنف اللي له أنواع يطلع سطر لكل نوع بكوده وسعره وكميته.</p>
     </div>
   );
 }
@@ -3223,11 +3230,11 @@ function AdminVariantsManager({ product }) {
 
   return (
     <div style={{ padding: "10px 8px" }}>
-      <p className="hint">خيارات «{product.name}» — كل خيار له سعره وكمية مخزونه الخاصين.</p>
+      <p className="hint">أنواع «{product.name}» — كل نوع له سعره وكمية مخزونه الخاصين.</p>
       {loading ? <Spinner /> : error ? <ErrorState message={error} onRetry={reload} /> : (
-        !data?.length ? <p className="cell-muted">لا توجد خيارات بعد</p> : (
+        !data?.length ? <p className="cell-muted">لا توجد أنواع بعد</p> : (
           <table className="data-table" style={{ marginTop: 0 }}>
-            <thead><tr><th>الخيار</th><th>السعر</th><th>الكمية</th><th>الحالة</th><th></th></tr></thead>
+            <thead><tr><th>النوع</th><th>الكود</th><th>السعر</th><th>الكمية</th><th>الحالة</th><th></th></tr></thead>
             <tbody>{data.map((v) => <AdminVariantRow key={v.id} variant={v} onDone={reload} />)}</tbody>
           </table>
         )
@@ -3236,7 +3243,7 @@ function AdminVariantsManager({ product }) {
         <AdminAddVariantForm productId={product.id} onClose={() => setShowAdd(false)} onCreated={() => { reload(); setShowAdd(false); }} />
       ) : (
         <button className="chip chip-add" style={{ marginTop: 8 }} onClick={() => setShowAdd(true)}>
-          <Plus size={14} style={{ verticalAlign: "-2px", marginLeft: 4 }} /> إضافة خيار
+          <Plus size={14} style={{ verticalAlign: "-2px", marginLeft: 4 }} /> إضافة نوع
         </button>
       )}
     </div>
@@ -3244,32 +3251,71 @@ function AdminVariantsManager({ product }) {
 }
 
 function AdminVariantRow({ variant: v, onDone }) {
+  const [label, setLabel] = useState(v.label);
+  const [sku, setSku] = useState(v.sku || "");
   const [price, setPrice] = useState(v.price);
-  const [stockQty, setStockQty] = useState(v.stock_qty);
-  const save = useAction(() => api.updateProductVariant(v.id, { price: Number(price), stockQty: Number(stockQty) }));
+  const [adjusting, setAdjusting] = useState(false);
+  const [delta, setDelta] = useState("");
+  const [reason, setReason] = useState("");
+  const save = useAction(() => api.updateProductVariant(v.id, {
+    label: label.trim() !== v.label ? label.trim() : undefined,
+    sku: sku.trim() && sku.trim() !== (v.sku || "") ? sku.trim() : undefined,
+    price: Number(price) !== Number(v.price) ? Number(price) : undefined,
+  }));
+  const adjust = useAction(() => api.adjustVariantStock(v.id, { changeQty: Number(delta), reason: reason.trim() }));
   const toggle = useAction(() => api.updateProductVariant(v.id, { isActive: !v.is_active }));
   const remove = useAction(() => api.deleteProductVariant(v.id));
-  const dirty = Number(price) !== Number(v.price) || Number(stockQty) !== Number(v.stock_qty);
+  const dirty = label.trim() !== v.label || (sku.trim() && sku.trim() !== (v.sku || "")) || Number(price) !== Number(v.price);
+  const canAdjust = Number(delta) !== 0 && !Number.isNaN(Number(delta)) && reason.trim().length >= 2;
 
   return (
-    <tr>
-      <td className="cell-id">{v.label}</td>
-      <td><input type="number" min="0" step="0.05" className="qty-input" style={{ width: 80 }} value={price} onChange={(e) => setPrice(e.target.value)} /></td>
-      <td><input type="number" min="0" className="qty-input" style={{ width: 70 }} value={stockQty} onChange={(e) => setStockQty(e.target.value)} /></td>
-      <td><span className={"status-pill" + (v.is_active ? " status-pill-approved" : "")}>{v.is_active ? "مفعّل" : "موقوف"}</span></td>
-      <td style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-        {dirty && (
-          <button className="save-inline" disabled={save.pending} onClick={() => save.run().then(onDone).catch(() => {})}>
-            {save.pending ? "…" : <Check size={13} />}
+    <>
+      <tr>
+        <td><input className="field-input" style={{ marginBottom: 0, minWidth: 90 }} value={label} onChange={(e) => setLabel(e.target.value)} /></td>
+        <td><input className="field-input" style={{ marginBottom: 0, minWidth: 80 }} dir="ltr" placeholder="الكود" value={sku} onChange={(e) => setSku(e.target.value)} /></td>
+        <td><input type="number" min="0" step="0.05" className="qty-input" style={{ width: 80 }} value={price} onChange={(e) => setPrice(e.target.value)} /></td>
+        <td>
+          <b>{v.stock_qty}</b>
+          <button className="link-btn" style={{ marginRight: 6, fontSize: 12 }} onClick={() => setAdjusting((x) => !x)}>
+            {adjusting ? "إلغاء" : "تعديل الكمية"}
           </button>
-        )}
-        <button className="invoice-action-btn" disabled={toggle.pending} onClick={() => toggle.run().then(onDone).catch(() => {})}>
-          {v.is_active ? "إيقاف" : "تفعيل"}
-        </button>
-        <button className="invoice-action-btn" disabled={remove.pending}
-          onClick={() => { if (window.confirm(`حذف الخيار "${v.label}"؟`)) remove.run().then(onDone).catch(() => {}); }}>حذف</button>
-      </td>
-    </tr>
+        </td>
+        <td><span className={"status-pill" + (v.is_active ? " status-pill-approved" : "")}>{v.is_active ? "مفعّل" : "موقوف"}</span></td>
+        <td style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {dirty && (
+            <button className="save-inline" disabled={save.pending} onClick={() => save.run().then(onDone).catch(() => {})}>
+              {save.pending ? "…" : <Check size={13} />}
+            </button>
+          )}
+          <button className="invoice-action-btn" disabled={toggle.pending} onClick={() => toggle.run().then(onDone).catch(() => {})}>
+            {v.is_active ? "إيقاف" : "تفعيل"}
+          </button>
+          <button className="invoice-action-btn" disabled={remove.pending}
+            onClick={() => { if (window.confirm(`حذف النوع "${v.label}"؟`)) remove.run().then(onDone).catch(() => {}); }}>حذف</button>
+        </td>
+      </tr>
+      {adjusting && (
+        <tr>
+          <td colSpan={6} style={{ background: "var(--paper)" }}>
+            <p className="hint" style={{ margin: "4px 0" }}>الكمية الحالية {v.stock_qty}. اكتب الزيادة بـ (+) أو الخصم بـ (−) مع السبب، وتتسجل في السجل باسمك.</p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <input className="field-input" style={{ marginBottom: 0, maxWidth: 120 }} type="number" placeholder="مثال: 5 أو -3"
+                value={delta} onChange={(e) => setDelta(e.target.value)} />
+              <input className="field-input" style={{ marginBottom: 0, flex: 1, minWidth: 160 }} placeholder="السبب (مثال: جرد، بضاعة جديدة)"
+                value={reason} onChange={(e) => setReason(e.target.value)} />
+              <button className="invoice-action-btn" disabled={!canAdjust || adjust.pending}
+                onClick={() => adjust.run().then(() => { setAdjusting(false); setDelta(""); setReason(""); onDone(); }).catch(() => {})}>
+                {adjust.pending ? "…" : `حفظ (الكمية بعد: ${Number(v.stock_qty) + (Number(delta) || 0)})`}
+              </button>
+            </div>
+            {adjust.error && <p className="field-error">{adjust.error}</p>}
+          </td>
+        </tr>
+      )}
+      {(save.error || toggle.error || remove.error) && (
+        <tr><td colSpan={6}><p className="field-error">{save.error || toggle.error || remove.error}</p></td></tr>
+      )}
+    </>
   );
 }
 
@@ -3291,17 +3337,17 @@ function AdminAddVariantForm({ productId, onClose, onCreated }) {
     setUploading(true);
     api.uploadImage(file).then((res) => setImageUrl(res.url)).catch(() => {}).finally(() => setUploading(false));
   }
-  const valid = label.trim() && Number(price) > 0;
+  const valid = label.trim() && Number(price) > 0 && sku.trim();
 
   return (
     <div style={{ marginTop: 10 }}>
-      <label className="field-label">اسم الخيار (مثال: أحمر - وسط - كرتونة)</label>
+      <label className="field-label">اسم النوع (مثال: أحمر - وسط - كرتونة)</label>
       <input className="field-input" value={label} onChange={(e) => setLabel(e.target.value)} />
       <label className="field-label">السعر (د.ل)</label>
       <input className="field-input" type="number" min="0" step="0.05" value={price} onChange={(e) => setPrice(e.target.value)} />
       <label className="field-label">الكمية المتوفرة</label>
       <input className="field-input" type="number" min="0" value={stockQty} onChange={(e) => setStockQty(e.target.value)} />
-      <label className="field-label">كود الخيار عند المورد (اختياري) + صورة</label>
+      <label className="field-label">كود النوع عند المورد (إجباري) + صورة</label>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <input className="field-input" style={{ marginBottom: 0, flex: 1 }} value={sku} onChange={(e) => setSku(e.target.value)} dir="ltr" />
         {imageUrl
@@ -3315,7 +3361,7 @@ function AdminAddVariantForm({ productId, onClose, onCreated }) {
       <div className="add-form-actions">
         <button className="btn-primary" disabled={!valid || create.pending || uploading}
           onClick={() => create.run().then(onCreated).catch(() => {})}>
-          {create.pending ? "جارٍ الحفظ…" : "حفظ الخيار"}
+          {create.pending ? "جارٍ الحفظ…" : "حفظ النوع"}
         </button>
         <button className="btn-ghost" onClick={onClose}>إلغاء</button>
       </div>
@@ -3373,7 +3419,7 @@ function AdminBulkImagesModal({ suppliers, onClose, onDone }) {
   );
 }
 
-// منشئ الخيارات (ألوان/مقاسات/عبوات) داخل نموذج إضافة الصنف نفسه — كل خيار سطر: الاسم، السعر، الكمية، كود المورد، صورة
+// منشئ الأنواع (ألوان/مقاسات/عبوات) داخل نموذج إضافة الصنف نفسه — كل نوع سطر: الاسم، السعر، الكمية، كود المورد، صورة
 function VariantsBuilder({ value, onChange }) {
   const setRow = (i, patch) => onChange(value.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const addRow = () => onChange([...value, { label: "", price: "", stockQty: "", sku: "", imageUrl: "" }]);
@@ -3398,7 +3444,7 @@ function VariantsBuilder({ value, onChange }) {
       {value.map((r, i) => (
         <div key={i} className="detail-card" style={{ padding: 10, marginBottom: 8 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-            <input className="field-input" style={{ marginBottom: 0, flex: 1 }} placeholder="الخيار (مثال: أحمر - وسط)"
+            <input className="field-input" style={{ marginBottom: 0, flex: 1 }} placeholder="النوع (مثال: أحمر - وسط)"
               value={r.label} onChange={(e) => setRow(i, { label: e.target.value })} />
             <button type="button" className="link-btn" onClick={() => removeRow(i)}>حذف</button>
           </div>
@@ -3409,7 +3455,7 @@ function VariantsBuilder({ value, onChange }) {
               value={r.stockQty} onChange={(e) => setRow(i, { stockQty: e.target.value })} />
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input className="field-input" style={{ marginBottom: 0, flex: 1 }} dir="ltr" placeholder="كود المورد (اختياري)"
+            <input className="field-input" style={{ marginBottom: 0, flex: 1 }} dir="ltr" placeholder="كود النوع (إجباري)"
               value={r.sku} onChange={(e) => setRow(i, { sku: e.target.value })} />
             {r.imageUrl
               ? <img src={r.imageUrl} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8 }}
@@ -3423,8 +3469,8 @@ function VariantsBuilder({ value, onChange }) {
           </div>
         </div>
       ))}
-      <button type="button" className="chip chip-add" onClick={addRow}>+ إضافة خيار</button>
-      {value.length > 0 && <p className="hint" style={{ marginTop: 6 }}>إجمالي كمية الصنف = مجموع الخيارات: <b>{total}</b></p>}
+      <button type="button" className="chip chip-add" onClick={addRow}>+ إضافة نوع</button>
+      {value.length > 0 && <p className="hint" style={{ marginTop: 6 }}>إجمالي كمية الصنف = مجموع الأنواع: <b>{total}</b></p>}
     </div>
   );
 }
@@ -3446,7 +3492,7 @@ function AdminAddProductForm({ onClose, onCreated }) {
   const [hasVariants, setHasVariants] = useState(false);
   const [variants, setVariants] = useState([{ label: "", price: "", stockQty: "", sku: "", imageUrl: "" }]);
   const variantsValid = !hasVariants || (variants.length > 0 &&
-    variants.every((v) => v.label.trim() && Number(v.price) > 0) &&
+    variants.every((v) => v.label.trim() && Number(v.price) > 0 && v.sku.trim()) &&
     new Set(variants.map((v) => v.label.trim())).size === variants.length);
 
   const create = useAction(() => api.createProduct({
@@ -3455,11 +3501,12 @@ function AdminAddProductForm({ onClose, onCreated }) {
       ? { variants: variants.map((v) => ({ label: v.label.trim(), price: Number(v.price), stockQty: Number(v.stockQty) || 0,
           sku: v.sku.trim() || undefined, imageUrl: v.imageUrl || undefined })) }
       : { basePrice: Number(form.basePrice), stockQty: Number(form.stockQty) || 0 }),
-    supplierSku: form.supplierSku.trim() || undefined, imageUrl: imageUrl || undefined,
+    supplierSku: hasVariants ? undefined : (form.supplierSku.trim() || undefined),
+    imageUrl: hasVariants ? undefined : (imageUrl || undefined),
   }));
 
   const valid = form.supplierId && form.sectionId && form.name.trim() && form.unit.trim() && variantsValid &&
-    (hasVariants || Number(form.basePrice) > 0);
+    (hasVariants || (Number(form.basePrice) > 0 && form.supplierSku.trim()));
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   function handleFile(e) {
@@ -3472,11 +3519,11 @@ function AdminAddProductForm({ onClose, onCreated }) {
       .finally(() => setUploading(false));
   }
 
-  // بعد إنشاء الصنف الأساسي، نعرض إدارة الخيارات مباشرة عشان يضيف الألوان/المقاسات لو يحتاج
+  // بعد إنشاء الصنف الأساسي، نعرض إدارة الأنواع مباشرة عشان يضيف الألوان/المقاسات لو يحتاج
   if (createdProduct) {
     return (
       <div className="detail-card voucher-form" style={{ marginBottom: 16 }}>
-        <p className="hint">تم إنشاء «{createdProduct.name}» بنجاح. تقدر تضيفله خيارات (ألوان/مقاسات/عبوات) الحين أو لاحقًا من إدارة الأصناف.</p>
+        <p className="hint">تم إنشاء «{createdProduct.name}» بنجاح. تقدر تضيفله أنواع (ألوان/مقاسات/عبوات) الحين أو لاحقًا من إدارة الأصناف.</p>
         <AdminVariantsManager product={createdProduct} />
         <div className="add-form-actions" style={{ marginTop: 10 }}>
           <button className="btn-primary" onClick={() => onCreated()}>تم</button>
@@ -3531,7 +3578,11 @@ function AdminAddProductForm({ onClose, onCreated }) {
         </>
       )}
 
-      <label className="field-label">رقم الصنف عند المورد (اختياري)</label>
+      {hasVariants ? (
+        <p className="hint">كود وصورة كل نوع تضيفهم داخل النوع نفسه، وصورة أول نوع تصير صورة الصنف للعميل.</p>
+      ) : (
+        <>
+      <label className="field-label">رقم الصنف عند المورد (إجباري)</label>
       <input className="field-input" value={form.supplierSku} onChange={set("supplierSku")} />
 
       <label className="field-label">صورة الصنف (اختياري)</label>
@@ -3547,6 +3598,8 @@ function AdminAddProductForm({ onClose, onCreated }) {
         </button>
       )}
       <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={handleFile} />
+        </>
+      )}
       {uploadError && <p className="field-error">{uploadError}</p>}
 
       {create.error && <p className="field-error">{create.error}</p>}
@@ -3623,7 +3676,7 @@ function PendingProductRow({ product: p, onDone }) {
         </td>
         <td className="cell-id">
           {p.name} <span className="cell-muted">({p.unit})</span>
-          {vList.length > 0 && <div className="cell-muted" style={{ fontSize: 12 }}>{vList.length} خيارات — إجمالي الكمية {totalQty}</div>}
+          {vList.length > 0 && <div className="cell-muted" style={{ fontSize: 12 }}>{vList.length} أنواع — إجمالي الكمية {totalQty}</div>}
         </td>
         <td className="cell-muted">{p.supplier_name}</td>
         <td className="cell-muted">{p.section_name}</td>
@@ -3652,9 +3705,9 @@ function PendingProductRow({ product: p, onDone }) {
         <tr>
           <td colSpan={6} style={{ background: "var(--paper)", padding: 12 }}>
             <PendingProductEditor product={p} onSaved={onDone} />
-            <h3 className="subsection-heading" style={{ marginTop: 14 }}>الخيارات</h3>
+            <h3 className="subsection-heading" style={{ marginTop: 14 }}>الأنواع</h3>
             {vLoading ? <Spinner /> : vError ? <ErrorState message={vError} onRetry={reloadVariants} /> : (
-              !vList.length ? <p className="cell-muted">هذا الصنف بدون خيارات</p> : (
+              !vList.length ? <p className="cell-muted">هذا الصنف بدون أنواع</p> : (
                 vList.map((v) => <PendingVariantEditor key={v.id} variant={v} onDone={reloadVariants} />)
               )
             )}
@@ -3713,7 +3766,7 @@ function PendingProductEditor({ product: p, onSaved }) {
   );
 }
 
-// تعديل خيار واحد (الاسم/السعر/الكمية/الكود/الصورة) قبل الموافقة
+// تعديل نوع واحد (الاسم/السعر/الكمية/الكود/الصورة) قبل الموافقة
 function PendingVariantEditor({ variant: v, onDone }) {
   const [label, setLabel] = useState(v.label);
   const [price, setPrice] = useState(v.price);
@@ -3746,7 +3799,7 @@ function PendingVariantEditor({ variant: v, onDone }) {
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={handleFile} />
       </div>
       <div style={{ flex: "2 1 140px" }}>
-        <label className="field-label">اسم الخيار</label>
+        <label className="field-label">اسم النوع</label>
         <input className="field-input" style={{ marginBottom: 0 }} value={label} onChange={(e) => setLabel(e.target.value)} />
       </div>
       <div style={{ flex: "1 1 80px" }}>
@@ -3768,7 +3821,7 @@ function PendingVariantEditor({ variant: v, onDone }) {
         </button>
       )}
       <button className="invoice-action-btn" disabled={remove.pending}
-        onClick={() => { if (window.confirm(`حذف الخيار "${v.label}"؟`)) remove.run().then(onDone).catch(() => {}); }}>حذف</button>
+        onClick={() => { if (window.confirm(`حذف النوع "${v.label}"؟`)) remove.run().then(onDone).catch(() => {}); }}>حذف</button>
       {(save.error || remove.error) && <p className="field-error" style={{ width: "100%" }}>{save.error || remove.error}</p>}
     </div>
   );
@@ -5012,7 +5065,7 @@ function AdminImportProductsView({ supplierId, sections, onClose, onImported }) 
               unit: String(r["وحدة البيع"] || "").trim(),
               basePrice: Number(r["السعر (د.ل)"] || 0),
               stockQty: Number(r["الكمية المتوفرة"] || 0),
-              supplierSku: String(r["رقم الصنف عندك (اختياري)"] || "").trim(),
+              supplierSku: String(r["رقم الصنف عندك (إجباري)"] || r["رقم الصنف عندك (اختياري)"] || "").trim(),
             }));
           resolve(cleaned);
         } catch (err) { reject("تعذّر قراءة الملف — تأكد من استخدام النموذج الصحيح"); }
@@ -5577,7 +5630,7 @@ function ItemDetail({ productId, can }) {
 
       <h2 className="subsection-heading">تعديل الصنف</h2>
       <table className="data-table" style={{ marginBottom: 20 }}>
-        <thead><tr><th>صورة</th><th>الصنف</th><th>كود الصنف</th><th>القسم</th><th>السعر</th><th>الكمية</th><th></th></tr></thead>
+        <thead><tr><th>صورة</th><th>الصنف</th><th>الأنواع</th><th>كود الصنف</th><th>القسم</th><th>السعر</th><th>الكمية</th><th></th></tr></thead>
         <tbody>
           <CatalogProductRow product={{ ...product, base_price: product.base_price }} can={can} onDone={reload} />
         </tbody>
