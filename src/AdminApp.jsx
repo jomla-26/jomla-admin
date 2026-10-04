@@ -721,14 +721,15 @@ function CreateOrderView({ onCreated }) {
       ? p.variants.map((v) => ({ ...p, rowKey: `${p.id}:${v.id}`, variantId: v.id, variantLabel: v.label,
           name: `${p.name} — ${v.label}`, base_price: v.price, stock: Number(v.stockQty) }))
       : [{ ...p, rowKey: p.id, stock: Number(p.stock_qty) }]
-  ).filter((p) => !productSearch.trim() || p.name.includes(productSearch.trim()));
+  ).filter((p) => !productSearch.trim() || p.name.includes(productSearch.trim()) || (p.supplier_name || "").includes(productSearch.trim()))
+    .sort((a, b) => a.name.localeCompare(b.name, "ar") || (a.supplier_name || "").localeCompare(b.supplier_name || "", "ar"));
 
   function addItem(p) {
     if (!(p.stock > 0)) return;
     setItems((prev) => {
       const existing = prev.find((i) => i.rowKey === p.rowKey);
       if (existing) return prev.map((i) => (i.rowKey === p.rowKey ? { ...i, qty: Math.min(i.qty + 1, p.stock) } : i));
-      return [...prev, { rowKey: p.rowKey, stock: p.stock, productId: p.id, variantId: p.variantId, name: p.name, unit: p.unit, price: Number(p.base_price), qty: 1 }];
+      return [...prev, { rowKey: p.rowKey, stock: p.stock, productId: p.id, variantId: p.variantId, name: p.name, supplierName: p.supplier_name, unit: p.unit, price: Number(p.base_price), qty: 1 }];
     });
   }
   function updateQty(rowKey, qty) {
@@ -816,14 +817,15 @@ function CreateOrderView({ onCreated }) {
 
             {sectionId && (
               <>
-                <SearchBar value={productSearch} onChange={setProductSearch} placeholder="ابحث عن صنف..." />
+                <SearchBar value={productSearch} onChange={setProductSearch} placeholder="ابحث عن صنف أو مورد..." />
                 {products.loading ? <Spinner /> : (
                   <table className="data-table" style={{ marginBottom: 16 }}>
-                    <thead><tr><th>الصنف</th><th>السعر التقديري</th><th>المتوفر</th><th></th></tr></thead>
+                    <thead><tr><th>الصنف</th><th>المورد</th><th>السعر التقديري</th><th>المتوفر</th><th></th></tr></thead>
                     <tbody>
                       {filteredProducts.map((p) => (
                         <tr className="data-row" key={p.rowKey} onClick={() => addItem(p)}>
                           <td>{p.name}</td>
+                          <td className="cell-muted">{p.supplier_name}</td>
                           <td className="cell-muted">{money(p.base_price)} / {p.unit}</td>
                           <td className={p.stock > 0 ? "cell-muted" : "cell-debt"}>{p.stock > 0 ? p.stock : "غير متوفر"}</td>
                           <td><button className="invoice-action-btn" disabled={!(p.stock > 0)}
@@ -831,7 +833,7 @@ function CreateOrderView({ onCreated }) {
                         </tr>
                       ))}
                       {!filteredProducts.length && (
-                        <tr><td colSpan={4} className="cell-muted">لا توجد أصناف مطابقة</td></tr>
+                        <tr><td colSpan={5} className="cell-muted">لا توجد أصناف مطابقة</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -843,11 +845,12 @@ function CreateOrderView({ onCreated }) {
               <>
                 <h2 className="subsection-heading">الأصناف المضافة</h2>
                 <table className="data-table" style={{ marginBottom: 10 }}>
-                  <thead><tr><th>الصنف</th><th>السعر</th><th>الكمية</th><th>الإجمالي</th><th></th></tr></thead>
+                  <thead><tr><th>الصنف</th><th>المورد</th><th>السعر</th><th>الكمية</th><th>الإجمالي</th><th></th></tr></thead>
                   <tbody>
                     {items.map((i) => (
                       <tr key={i.rowKey}>
                         <td>{i.name}</td>
+                        <td className="cell-muted">{i.supplierName}</td>
                         <td className="cell-muted">{money(i.price)}</td>
                         <td>
                           <input className="qty-input" type="number" min="1" value={i.qty} style={{ width: 70 }}
@@ -1145,8 +1148,8 @@ function EditableItemsPanel({ order, onChanged }) {
   const removeItem = useAction((itemId) => api.removeOrderItem(order.id, itemId));
 
   const filteredProducts = (products.data ?? []).filter((p) =>
-    !productSearch.trim() || p.name.includes(productSearch.trim())
-  );
+    !productSearch.trim() || p.name.includes(productSearch.trim()) || (p.supplier_name || "").includes(productSearch.trim())
+  ).sort((a, b) => a.name.localeCompare(b.name, "ar") || (a.supplier_name || "").localeCompare(b.supplier_name || "", "ar"));
 
   const allItems = order.suppliers.flatMap((s) =>
     s.items.map((i) => ({ ...i, supplier_name: s.supplier_name }))
@@ -1186,17 +1189,17 @@ function EditableItemsPanel({ order, onChanged }) {
           </div>
           {sectionId && (
             <>
-              <SearchBar value={productSearch} onChange={setProductSearch} placeholder="ابحث عن صنف..." />
+              <SearchBar value={productSearch} onChange={setProductSearch} placeholder="ابحث عن صنف أو مورد..." />
               {products.loading ? <Spinner /> : (
                 <table className="data-table" style={{ marginBottom: 0 }}>
-                  <thead><tr><th>الصنف</th><th>السعر التقديري</th><th></th></tr></thead>
+                  <thead><tr><th>الصنف</th><th>المورد</th><th>السعر التقديري</th><th></th></tr></thead>
                   <tbody>
                     {filteredProducts.map((p) => (
                       <AddItemRow key={p.id} product={p} addItem={addItem}
                         onAdded={() => { onChanged(); setAddingProduct(false); setSectionId(""); setProductSearch(""); }} />
                     ))}
                     {!filteredProducts.length && (
-                      <tr><td colSpan={3} className="cell-muted">لا توجد أصناف مطابقة</td></tr>
+                      <tr><td colSpan={4} className="cell-muted">لا توجد أصناف مطابقة</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1263,6 +1266,7 @@ function AddItemRow({ product: p, addItem, onAdded }) {
           </select>
         )}
       </td>
+      <td className="cell-muted">{p.supplier_name}</td>
       <td className="cell-muted">{money(displayPrice)} / {p.unit}</td>
       <td>
         <button className="invoice-action-btn" disabled={addItem.pending || (hasVariants && !variantId)}
@@ -2815,6 +2819,33 @@ function DeliveryView({ can }) {
 /* --------------------------- إدارة الأصناف --------------------------- */
 
 function CatalogManagerView({ can }) {
+  const [tab, setTab] = useState("all");
+  const canApprove = can("catalog.approve_products");
+  const pending = useFetch(
+    () => (canApprove ? api.products({ approvalStatus: "pending" }) : Promise.resolve([])),
+    []
+  );
+  const pendingCount = pending.data?.length ?? 0;
+  return (
+    <div className="screen">
+      {canApprove && (
+        <div className="chip-row" style={{ marginBottom: 12 }}>
+          <button className={"chip" + (tab === "all" ? " chip-active" : "")} onClick={() => setTab("all")}>كل الأصناف</button>
+          <button className={"chip" + (tab === "pending" ? " chip-active" : "")} onClick={() => setTab("pending")}
+            style={pendingCount > 0 && tab !== "pending" ? { borderColor: "var(--orange, #f97316)" } : undefined}>
+            أصناف بانتظار الموافقة{pendingCount > 0 ? ` (${pendingCount})` : ""}
+          </button>
+        </div>
+      )}
+      {tab === "pending" && canApprove
+        ? <PendingProductsSettings onChanged={pending.reload} />
+        : <CatalogProductsPane can={can} onChanged={pending.reload} />}
+    </div>
+  );
+}
+
+function CatalogProductsPane({ can, onChanged }) {
+  const [groupBy, setGroupBy] = useState("supplier"); // supplier | section
   const [supplierId, setSupplierId] = useState("");
   const [sectionId, setSectionId] = useState("");
   const [search, setSearch] = useState("");
@@ -2841,18 +2872,27 @@ function CatalogManagerView({ can }) {
     : null;
   const sectionOptions = (sections.data ?? []).filter((s) => !relevantSectionIds || relevantSectionIds.has(s.id));
 
+  // التجميع: حسب المورد (والأصناف داخله مرتبة بالقسم ثم الاسم) أو حسب القسم (والأصناف داخله مرتبة بالاسم ثم المورد)
+  const ar = (a, b) => String(a || "").localeCompare(String(b || ""), "ar");
   const grouped = [];
-  const bySupplier = {};
+  const byKey = {};
   for (const p of products.data ?? []) {
-    if (!bySupplier[p.supplier_id]) {
-      bySupplier[p.supplier_id] = { supplierId: p.supplier_id, supplierName: p.supplier_name, items: [] };
-      grouped.push(bySupplier[p.supplier_id]);
+    const key = groupBy === "section" ? p.section_id : p.supplier_id;
+    if (!byKey[key]) {
+      byKey[key] = { supplierId: key, supplierName: groupBy === "section" ? p.section_name : p.supplier_name, items: [] };
+      grouped.push(byKey[key]);
     }
-    bySupplier[p.supplier_id].items.push(p);
+    byKey[key].items.push(p);
+  }
+  grouped.sort((a, b) => ar(a.supplierName, b.supplierName));
+  for (const g of grouped) {
+    g.items.sort(groupBy === "section"
+      ? (a, b) => ar(a.name, b.name) || ar(a.supplier_name, b.supplier_name)
+      : (a, b) => ar(a.section_name, b.section_name) || ar(a.name, b.name));
   }
 
   return (
-    <div className="screen">
+    <div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         <select className="field-input" style={{ maxWidth: 220 }} value={supplierId} onChange={(e) => { setSupplierId(e.target.value); setSectionId(""); }}>
           <option value="">كل الموردين</option>
@@ -2876,6 +2916,10 @@ function CatalogManagerView({ can }) {
             <ImageIcon size={14} style={{ verticalAlign: "-2px", marginLeft: 4 }} /> {showBulkImages ? "إلغاء" : "رفع صور دفعة واحدة"}
           </button>
         )}
+        <div className="chip-row" style={{ margin: 0 }}>
+          <button className={"chip" + (groupBy === "supplier" ? " chip-active" : "")} onClick={() => setGroupBy("supplier")}>ترتيب حسب المورد</button>
+          <button className={"chip" + (groupBy === "section" ? " chip-active" : "")} onClick={() => setGroupBy("section")}>ترتيب حسب القسم</button>
+        </div>
         {(can("catalog.manage") || can("reports.view")) && (
           <button className="chip" onClick={() => setShowExport((v) => !v)}>
             <Download size={14} style={{ verticalAlign: "-2px", marginLeft: 4 }} /> {showExport ? "إغلاق التصدير" : "تصدير المخزون إلى Excel"}
@@ -2893,7 +2937,7 @@ function CatalogManagerView({ can }) {
 
       {showAdd && (
         <AdminAddProductForm onClose={() => setShowAdd(false)}
-          onCreated={() => { setShowAdd(false); products.reload(); }} />
+          onCreated={() => { setShowAdd(false); products.reload(); onChanged?.(); }} />
       )}
 
       {showBulkImages && (
@@ -2905,7 +2949,7 @@ function CatalogManagerView({ can }) {
           grouped.map((g) => (
             <div key={g.supplierId} className="invoice-block" style={{ marginBottom: 16 }}>
               <div className="invoice-head">
-                <span>{g.supplierName}</span>
+                <span>{groupBy === "section" ? `القسم: ${g.supplierName}` : g.supplierName}</span>
                 <span className="invoice-head-count">{g.items.length} صنف</span>
               </div>
               <table className="data-table" style={{ marginBottom: 0 }}>
@@ -2919,11 +2963,12 @@ function CatalogManagerView({ can }) {
                         return next;
                       })} />
                   </th>
-                  <th>صورة</th><th>الصنف</th><th>القسم</th><th>السعر</th><th>الكمية</th><th></th>
+                  <th>صورة</th><th>الصنف</th><th>كود الصنف</th><th>القسم</th><th>السعر</th><th>الكمية</th><th></th>
                 </tr></thead>
                 <tbody>
                   {g.items.map((p) => (
-                    <CatalogProductRow key={p.id} product={p} can={can} onDone={products.reload}
+                    <CatalogProductRow key={p.id} product={p} can={can} onDone={() => { products.reload(); onChanged?.(); }}
+                      showSupplier={groupBy === "section"}
                       checked={!!selected[p.id]}
                       onCheck={(on) => setSelected((cur) => {
                         const next = { ...cur };
@@ -2941,7 +2986,7 @@ function CatalogManagerView({ can }) {
   );
 }
 
-function CatalogProductRow({ product: p, can, onDone, checked, onCheck }) {
+function CatalogProductRow({ product: p, can, onDone, checked, onCheck, showSupplier }) {
   const [editing, setEditing] = useState(false);
   const [showVariants, setShowVariants] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -2989,7 +3034,12 @@ function CatalogProductRow({ product: p, can, onDone, checked, onCheck }) {
             {p.variants?.length > 0 && <span className="status-pill status-pill-approved" style={{ marginRight: 6 }}>{p.variants.length} خيارات</span>}
             {p.approval_status === "pending" && <span className="status-pill" style={{ marginRight: 6 }}>بانتظار الموافقة</span>}
             {p.is_active === false && <span className="status-pill" style={{ marginRight: 6 }}>موقوف</span>}
-            <div className="cell-muted" style={{ fontSize: 12 }}>{p.supplier_sku ? <>كود الصنف: <span dir="ltr">{p.supplier_sku}</span></> : "بدون كود"}</div>
+            {showSupplier && <div className="cell-muted" style={{ fontSize: 12 }}>المورد: {p.supplier_name}</div>}
+          </td>
+          <td className="cell-muted" dir="ltr" style={{ textAlign: "right" }}>
+            {p.variants?.length > 0
+              ? (p.variants.map((v) => v.sku).filter(Boolean).join("، ") || "—")
+              : (p.supplier_sku || "—")}
           </td>
           <td className="cell-muted">{p.section_name}</td>
           <td>{money(p.base_price)}</td>
@@ -3014,12 +3064,12 @@ function CatalogProductRow({ product: p, can, onDone, checked, onCheck }) {
           </td>
         </tr>
         {showVariants && (
-          <tr><td colSpan={selectable ? 7 : 6} style={{ background: "var(--paper)" }}>
+          <tr><td colSpan={selectable ? 8 : 7} style={{ background: "var(--paper)" }}>
             <AdminVariantsManager product={p} />
           </td></tr>
         )}
         {showHistory && (
-          <tr><td colSpan={selectable ? 7 : 6} style={{ background: "var(--paper)" }}>
+          <tr><td colSpan={selectable ? 8 : 7} style={{ background: "var(--paper)" }}>
             <ProductHistoryPanel productId={p.id} />
           </td></tr>
         )}
@@ -3041,7 +3091,11 @@ function CatalogProductRow({ product: p, can, onDone, checked, onCheck }) {
       </td>
       <td>
         <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} />
-        <input className="field-input" dir="ltr" placeholder="كود الصنف عند المورد" value={sku} onChange={(e) => setSku(e.target.value)} />
+      </td>
+      <td>
+        {p.variants?.length > 0
+          ? <span className="cell-muted">الكود على كل خيار</span>
+          : <input className="field-input" dir="ltr" placeholder="كود الصنف" value={sku} onChange={(e) => setSku(e.target.value)} />}
       </td>
       <td>
         <select className="field-input" value={sectionId} onChange={(e) => setSectionId(e.target.value)}>
@@ -3509,11 +3563,6 @@ function AdminAddProductForm({ onClose, onCreated }) {
 
 function SettingsView({ can }) {
   const [tab, setTab] = useState("sections");
-  const pending = useFetch(
-    () => (can("catalog.approve_products") ? api.products({ approvalStatus: "pending" }) : Promise.resolve([])),
-    []
-  );
-  const pendingCount = pending.data?.length ?? 0;
   return (
     <div className="screen">
       <div className="chip-row">
@@ -3521,17 +3570,11 @@ function SettingsView({ can }) {
         <button className={"chip" + (tab === "zones" ? " chip-active" : "")} onClick={() => setTab("zones")}>مناطق التوصيل</button>
         <button className={"chip" + (tab === "vehicles" ? " chip-active" : "")} onClick={() => setTab("vehicles")}>أنواع السيارات</button>
         <button className={"chip" + (tab === "banners" ? " chip-active" : "")} onClick={() => setTab("banners")}>البانرات الترويجية</button>
-        {can("catalog.approve_products") && (
-          <button className={"chip" + (tab === "pendingProducts" ? " chip-active" : "")} onClick={() => setTab("pendingProducts")}>
-            أصناف بانتظار الموافقة{pendingCount > 0 ? ` (${pendingCount})` : ""}
-          </button>
-        )}
       </div>
       {tab === "sections" && <SectionsSettings can={can} />}
       {tab === "zones" && <ZonesSettings can={can} />}
       {tab === "vehicles" && <VehicleTypesSettings can={can} />}
       {tab === "banners" && <BannersSettings can={can} />}
-      {tab === "pendingProducts" && <PendingProductsSettings onChanged={pending.reload} />}
     </div>
   );
 }
@@ -5534,7 +5577,7 @@ function ItemDetail({ productId, can }) {
 
       <h2 className="subsection-heading">تعديل الصنف</h2>
       <table className="data-table" style={{ marginBottom: 20 }}>
-        <thead><tr><th>صورة</th><th>الصنف</th><th>القسم</th><th>السعر</th><th>الكمية</th><th></th></tr></thead>
+        <thead><tr><th>صورة</th><th>الصنف</th><th>كود الصنف</th><th>القسم</th><th>السعر</th><th>الكمية</th><th></th></tr></thead>
         <tbody>
           <CatalogProductRow product={{ ...product, base_price: product.base_price }} can={can} onDone={reload} />
         </tbody>
