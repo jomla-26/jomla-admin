@@ -287,10 +287,10 @@ function DateRangeBar({ value, onChange, chips = RANGE_CHIPS_DEFAULT, style }) {
   return (
     <div className="date-range-bar" style={style}>
       <label className="drb-field"><span>من</span>
-        <input type="date" value={v.from} max={v.to || undefined} onChange={(e) => set({ from: e.target.value })} />
+        <input type="date" lang="en-GB" dir="ltr" value={v.from} max={v.to || undefined} onChange={(e) => set({ from: e.target.value })} />
       </label>
       <label className="drb-field"><span>إلى</span>
-        <input type="date" value={v.to} min={v.from || undefined} onChange={(e) => set({ to: e.target.value })} />
+        <input type="date" lang="en-GB" dir="ltr" value={v.to} min={v.from || undefined} onChange={(e) => set({ to: e.target.value })} />
       </label>
       <div className="chip-row drb-chips">
         {chips.map((c) => (
@@ -1768,7 +1768,7 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
                 <label className="field-label">شروط البيع الآجل (اختياري)</label>
                 <input className="field-input" type="number" min="0" placeholder="المبلغ عند الاستلام"
                   value={deposit} onChange={(e) => setDeposit(e.target.value)} />
-                <input className="field-input" type="date" value={dueDate}
+                <input className="field-input" type="date" lang="en-GB" dir="ltr" value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)} />
                 <p className="hint">تُطبَّق فقط إذا كانت طريقة الدفع آجل ومفعّلة للعميل.</p>
               </div>
@@ -2565,7 +2565,7 @@ function AttendanceTab({ employeeId }) {
   return (
     <>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-        <label className="mini-field"><span>التاريخ</span><input className="qty-input" type="date" value={form.workDate} onChange={set("workDate")} /></label>
+        <label className="mini-field"><span>التاريخ</span><input className="qty-input" type="date" lang="en-GB" dir="ltr" value={form.workDate} onChange={set("workDate")} /></label>
         <label className="mini-field"><span>حضور</span><input className="qty-input" type="time" value={form.checkIn} onChange={set("checkIn")} /></label>
         <label className="mini-field"><span>انصراف</span><input className="qty-input" type="time" value={form.checkOut} onChange={set("checkOut")} /></label>
         <label className="mini-field">
@@ -2620,8 +2620,8 @@ function ReviewsTab({ employeeId }) {
       {showAdd ? (
         <div className="detail-card voucher-form" style={{ marginBottom: 14 }}>
           <div style={{ display: "flex", gap: 10 }}>
-            <label className="mini-field"><span>من</span><input className="qty-input" type="date" value={form.periodStart} onChange={set("periodStart")} /></label>
-            <label className="mini-field"><span>إلى</span><input className="qty-input" type="date" value={form.periodEnd} onChange={set("periodEnd")} /></label>
+            <label className="mini-field"><span>من</span><input className="qty-input" type="date" lang="en-GB" dir="ltr" value={form.periodStart} onChange={set("periodStart")} /></label>
+            <label className="mini-field"><span>إلى</span><input className="qty-input" type="date" lang="en-GB" dir="ltr" value={form.periodEnd} onChange={set("periodEnd")} /></label>
           </div>
           <label className="field-label" style={{ marginTop: 10 }}>المهام المنجزة</label>
           <input className="field-input" type="number" min="0" value={form.tasksCompleted} onChange={set("tasksCompleted")} />
@@ -5091,11 +5091,11 @@ function ProfitReport() {
         <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           <div>
             <label className="field-label">من تاريخ</label>
-            <input type="date" className="field-input" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+            <input type="date" lang="en-GB" dir="ltr" className="field-input" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
           </div>
           <div>
             <label className="field-label">إلى تاريخ</label>
-            <input type="date" className="field-input" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+            <input type="date" lang="en-GB" dir="ltr" className="field-input" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
           </div>
         </div>
       )}
@@ -6895,7 +6895,7 @@ function ExpenseForm({ onClose, onDone }) {
       <input className="field-input" type="number" min="0" value={form.amount} onChange={set("amount")} />
 
       <label className="field-label">تاريخ المصروف</label>
-      <input className="field-input" type="date" value={form.expenseDate} onChange={set("expenseDate")} />
+      <input className="field-input" type="date" lang="en-GB" dir="ltr" value={form.expenseDate} onChange={set("expenseDate")} />
 
       <label className="field-label">طريقة الصرف</label>
       <div className="tile-row-inline">
