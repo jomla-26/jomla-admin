@@ -3902,22 +3902,25 @@ function PendingVariantEditor({ variant: v, onDone }) {
 function BannersSettings({ can }) {
   const { data, loading, error, reload } = useFetch(() => api.adminBanners(), []);
   const [showAdd, setShowAdd] = useState(false);
+  const secs = useFetch(() => api.sections(), []);
+  const mainSections = (Array.isArray(secs.data) ? secs.data : []).filter((s) => !s.parent_id && s.is_active !== false);
 
   return (
     <div>
       <p className="hint">
         البانرات اللي "مفعّلة" بس تظهر بالشاشة الرئيسية لتطبيق العميل، بالترتيب المحدد (الأصغر أول).
         لو فيها أكتر من بانر مفعّل، تتناوب تلقائيًا كل بضع ثواني.
+        البانر يظهر بس للعملاء اللي مفعّلين عندهم الأقسام المحددة له، والبانرات العامة (لكل الأقسام) تظهر للجميع.
       </p>
       {loading ? <Spinner /> : error ? <ErrorState message={error} onRetry={reload} /> : (
         <div className="ledger-list" style={{ marginBottom: 16 }}>
-          {(data ?? []).map((b) => <BannerRow key={b.id} banner={b} can={can} onChanged={reload} />)}
+          {(data ?? []).map((b) => <BannerRow key={b.id} banner={b} can={can} onChanged={reload} mainSections={mainSections} />)}
           {!data?.length && <Empty icon={ImageIcon} text="لا توجد بانرات بعد" />}
         </div>
       )}
       {can("catalog.manage") && (
         showAdd
-          ? <AddBannerForm onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); reload(); }} />
+          ? <AddBannerForm mainSections={mainSections} onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); reload(); }} />
           : <button className="btn-primary" style={{ maxWidth: 220 }} onClick={() => setShowAdd(true)}>
               <Plus size={16} style={{ verticalAlign: "-3px", marginLeft: 6 }} /> إضافة بانر جديد
             </button>
@@ -3926,20 +3929,52 @@ function BannersSettings({ can }) {
   );
 }
 
-function BannerRow({ banner, can, onChanged }) {
+// اختيار الأقسام الرئيسية المستهدفة للبانر — فارغ = عام (لكل الأقسام)
+function BannerSectionPicker({ mainSections, value, onChange }) {
+  const general = value.length === 0;
+  const toggleOne = (id) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+      <button type="button" className={"chip" + (general ? " chip-active" : "")} onClick={() => onChange([])}>
+        كل الأقسام
+      </button>
+      {mainSections.map((s) => (
+        <button type="button" key={s.id} className={"chip" + (value.includes(s.id) ? " chip-active" : "")}
+          onClick={() => toggleOne(s.id)}>
+          {s.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BannerRow({ banner, can, onChanged, mainSections }) {
   const toggle = useAction(() => api.updateBanner(banner.id, { isActive: !banner.is_active }));
   const remove = useAction(() => api.deleteBanner(banner.id));
   const [confirming, setConfirming] = useState(false);
+  const [editingSections, setEditingSections] = useState(false);
+  const [draftIds, setDraftIds] = useState([]);
+  const saveSections = useAction(() => api.updateBanner(banner.id, { sectionIds: draftIds }));
+  const names = Array.isArray(banner.section_names) ? banner.section_names : [];
 
   return (
-    <div className="ledger-row" style={{ cursor: "default" }}>
+    <div className="ledger-row" style={{ cursor: "default", flexWrap: "wrap" }}>
       <img src={banner.image_url} alt="" style={{ width: 64, height: 40, objectFit: "cover", borderRadius: 8, flex: "none" }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="ledger-row-title" style={{ fontSize: 14 }}>{banner.title || "بدون عنوان"}</div>
         <span className="cell-muted">ترتيب: {banner.sort_order}{banner.link_url ? " · له رابط" : ""}</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+          {names.length
+            ? names.map((n, i) => <span key={i} className="status-pill status-pill-approved">{n}</span>)
+            : <span className="status-pill">عام — لكل الأقسام</span>}
+        </div>
       </div>
       {can("catalog.manage") && (
-        <div style={{ display: "flex", gap: 6, flex: "none" }}>
+        <div style={{ display: "flex", gap: 6, flex: "none", flexWrap: "wrap" }}>
+          <button className="invoice-action-btn"
+            onClick={() => { setDraftIds(Array.isArray(banner.section_ids) ? banner.section_ids : []); setEditingSections((v) => !v); }}>
+            تعديل الأقسام
+          </button>
           <button className="invoice-action-btn" disabled={toggle.pending}
             onClick={() => toggle.run().then(onChanged).catch(() => {})}>
             {banner.is_active ? "إخفاء" : "تفعيل"}
@@ -3952,11 +3987,26 @@ function BannerRow({ banner, can, onChanged }) {
           )}
         </div>
       )}
+      {editingSections && can("catalog.manage") && (
+        <div style={{ width: "100%", paddingTop: 8 }}>
+          <label className="field-label">الأقسام المستهدفة</label>
+          <BannerSectionPicker mainSections={mainSections} value={draftIds} onChange={setDraftIds} />
+          {saveSections.error && <p className="field-error">{saveSections.error}</p>}
+          <div className="add-form-actions">
+            <button className="btn-primary" disabled={saveSections.pending}
+              onClick={() => saveSections.run().then(() => { setEditingSections(false); onChanged(); }).catch(() => {})}>
+              {saveSections.pending ? "جارٍ الحفظ…" : "حفظ الأقسام"}
+            </button>
+            <button className="btn-ghost" onClick={() => setEditingSections(false)}>إلغاء</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function AddBannerForm({ onClose, onCreated }) {
+function AddBannerForm({ onClose, onCreated, mainSections }) {
+  const [sectionIds, setSectionIds] = useState([]);
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -3969,6 +4019,7 @@ function AddBannerForm({ onClose, onCreated }) {
   const create = useAction(() => api.createBanner({
     imageUrl, title: title.trim() || undefined, subtitle: subtitle.trim() || undefined,
     linkUrl: linkUrl.trim() || undefined, sortOrder: Number(sortOrder) || 0,
+    sectionIds,
   }));
 
   function handleFile(e) {
@@ -4010,6 +4061,9 @@ function AddBannerForm({ onClose, onCreated }) {
 
       <label className="field-label">ترتيب الظهور (الأصغر أول)</label>
       <input className="field-input" type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />
+
+      <label className="field-label">الأقسام المستهدفة (الافتراضي: كل الأقسام)</label>
+      <BannerSectionPicker mainSections={mainSections} value={sectionIds} onChange={setSectionIds} />
 
       {create.error && <p className="field-error">{create.error}</p>}
       <div className="add-form-actions">
@@ -4162,6 +4216,9 @@ function SectionRow({ section: s, can, onDone, isOpen, onToggleSubsections, comp
   const uploadImg = useAction((url) => api.updateSection(s.id, { imageUrl: url }));
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const rename = useAction(() => api.updateSection(s.id, { name: nameDraft.trim() }));
 
   function handleFile(e) {
     const file = e.target.files?.[0];
@@ -4182,7 +4239,18 @@ function SectionRow({ section: s, can, onDone, isOpen, onToggleSubsections, comp
           : <div style={{ width: 40, height: 40, borderRadius: 8, background: "var(--paper)", display: "flex",
               alignItems: "center", justifyContent: "center", color: "var(--ink-soft)" }}><ImageIcon size={16} /></div>}
       </td>
-      <td className="cell-id" style={compact ? { paddingRight: 20 } : undefined}>{compact ? "— " : ""}{s.name}</td>
+      <td className="cell-id" style={compact ? { paddingRight: 20 } : undefined}>
+        {renaming ? (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <input className="field-input" style={{ marginBottom: 0, maxWidth: 200 }} value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)} />
+            <button className="invoice-action-btn" disabled={nameDraft.trim().length < 2 || rename.pending}
+              onClick={() => rename.run().then(() => { setRenaming(false); onDone(); }).catch(() => {})}>حفظ</button>
+            <button className="invoice-action-btn" onClick={() => setRenaming(false)}>إلغاء</button>
+            {rename.error && <span className="field-error" style={{ width: "100%" }}>{rename.error}</span>}
+          </div>
+        ) : (<>{compact ? "— " : ""}{s.name}</>)}
+      </td>
       <td className="cell-muted" dir="ltr">{s.slug}</td>
       <td><span className={"status-pill" + (s.is_active !== false ? " status-pill-approved" : "")}>
         {s.is_active !== false ? "مفعّل" : "موقوف"}</span></td>
@@ -4196,6 +4264,11 @@ function SectionRow({ section: s, can, onDone, isOpen, onToggleSubsections, comp
           <button className="invoice-action-btn" disabled={toggle.pending}
             onClick={() => toggle.run().then(onDone).catch(() => {})}>
             {s.is_active !== false ? "إيقاف" : "تفعيل"}
+          </button>
+        )}
+        {can("accounts.sections") && !renaming && (
+          <button className="invoice-action-btn" onClick={() => { setNameDraft(s.name || ""); setRenaming(true); }}>
+            تعديل الاسم
           </button>
         )}
         {can("catalog.manage") && (
