@@ -351,6 +351,15 @@ orderMessages: (orderId, orderSupplierId) => request(`/engagement/orders/${order
   addReview: (id, body) => request(`/employees/${id}/reviews`, { method: "POST", body }),
   reviews: (id) => request(`/employees/${id}/reviews`),
 
+  /* سلة العميل المحفوظة (للإدارة) + كشف بحث العملاء */
+  customerCart: (id, signal) => request(`/carts/customer/${id}`, { signal }),
+  clearCustomerCart: (id) => request(`/carts/customer/${id}`, { method: "DELETE" }),
+  searchLogAdmin: ({ days, onlyEmpty, q } = {}, signal) =>
+    request("/search-log/admin", {
+      signal,
+      params: { days: days || 30, onlyEmpty: onlyEmpty ? 1 : 0, q: (q || "").trim() || undefined },
+    }),
+
   /* البانرات الترويجية */
   banners: () => request("/banners"),
   adminBanners: () => request("/banners/admin"),

@@ -28,6 +28,14 @@ const LOGO_FULL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAArwAAAFYCAYAAAC
 
 const money = (n) => `${Number(n || 0).toFixed(2)} د.ل`;
 const day = (d) => String(d || "").slice(0, 10);
+const fmtDateTime = (d) => {
+  try {
+    const t = new Date(d);
+    if (Number.isNaN(t.getTime())) return String(d || "");
+    const p = (n) => String(n).padStart(2, "0");
+    return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
+  } catch { return String(d || ""); }
+};
 
 const STATUS_LABELS = {
   draft: "مسودة", under_review: "قيد المراجعة", approved: "معتمدة",
@@ -720,7 +728,12 @@ function CreateOrderView({ onCreated }) {
   const [productSearch, setProductSearch] = useState("");
   const [items, setItems] = useState([]); const [priceTick, setPriceTick] = useState(0); useEffect(() => { if (!sectionId) return; const t = setInterval(() => setPriceTick((x) => x + 1), 20000); return () => clearInterval(t); }, [sectionId]);
 
+  const [cartDismissedFor, setCartDismissedFor] = useState("");
+  const [cartLoadedFor, setCartLoadedFor] = useState("");
+
   const customers = useFetch((s) => api.accounts("customer", { status: "approved", limit: 1000 }, s), []);
+  // السلة المحفوظة للعميل المختار (لو الموظف ما عنده صلاحية أو صار خطأ نتجاهلها بصمت)
+  const savedCart = useFetch((s) => api.customerCart(customerId, s).catch((e) => { if (e?.name === "AbortError") throw e; return null; }), [customerId], { skip: !customerId });
   const zones = useFetch((s) => api.deliveryZones(s).catch(() => []), []);
   const vehicleTypes = useFetch((s) => api.vehicleTypes(s).catch(() => []), []);
   const products = useFetch(
@@ -760,6 +773,39 @@ function CreateOrderView({ onCreated }) {
 
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
 
+  // سلة العميل المحفوظة: lines قد تكون مصفوفة مباشرة أو كائن { items, unavailable }
+  const cartRaw = customerId && !savedCart.loading && savedCart.data
+    && (!savedCart.data.customerId || savedCart.data.customerId === customerId) ? savedCart.data : null;
+  const cartLines = cartRaw ? (Array.isArray(cartRaw.lines) ? cartRaw.lines : (cartRaw.lines?.items ?? [])) : [];
+  const cartUnavailable = cartRaw
+    ? (Array.isArray(cartRaw.unavailable) ? cartRaw.unavailable : (cartRaw.lines?.unavailable ?? []))
+    : [];
+  const showCartBox = Boolean(cartRaw) && (cartLines.length > 0 || cartUnavailable.length > 0)
+    && cartDismissedFor !== customerId;
+  const cartLoaded = cartLoadedFor === customerId;
+
+  function loadCartIntoOrder() {
+    setItems((prev) => {
+      let next = [...prev];
+      for (const l of cartLines) {
+        const stock = Number(l.stock_qty);
+        const qty = Number(l.qty);
+        if (!(stock > 0) || !(qty > 0)) continue;
+        const variantId = l.variantId || undefined;
+        const rowKey = variantId ? `${l.id}:${variantId}` : l.id;
+        const existing = next.find((i) => i.rowKey === rowKey);
+        if (existing) {
+          next = next.map((i) => (i.rowKey === rowKey ? { ...i, qty: Math.min(i.qty + qty, stock) } : i));
+        } else {
+          next.push({ rowKey, stock, productId: l.id, variantId, name: l.name, supplierName: l.supplier_name,
+            unit: l.unit, price: Number(l.price), qty: Math.min(qty, stock) });
+        }
+      }
+      return next;
+    });
+    setCartLoadedFor(customerId);
+  }
+
   const create = useAction(() => api.adminCreateOrder({
     customerId,
     fulfillment,
@@ -784,7 +830,7 @@ function CreateOrderView({ onCreated }) {
         <label className="field-label">العميل</label>
         <SearchBar value={customerQuery} onChange={setCustomerQuery} placeholder="ابحث بالاسم أو رقم الهاتف..." />
         <select className="field-input" value={customerId}
-          onChange={(e) => { setCustomerId(e.target.value); setItems([]); setSectionId(""); setPaymentMethod((m) => (m === "deferred" ? (fulfillment === "delivery" ? "cash" : "pay_at_supplier") : m)); }}>
+          onChange={(e) => { setCustomerId(e.target.value); setItems([]); setSectionId(""); setCartDismissedFor(""); setCartLoadedFor(""); setPaymentMethod((m) => (m === "deferred" ? (fulfillment === "delivery" ? "cash" : "pay_at_supplier") : m)); }}>
           <option value="">— اختر العميل —</option>
           {filteredCustomers.map((c) => (
             <option key={c.id} value={c.id}>{c.business_name} — {c.phone}</option>
@@ -833,6 +879,48 @@ function CreateOrderView({ onCreated }) {
               ))}
               {!allowedSections.length && <p className="hint">هذا العميل ليس له أقسام مفعّلة.</p>}
             </div>
+
+            {showCartBox && (
+              <div className="alert-banner alert-banner-static" style={{ flexDirection: "column", alignItems: "stretch", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Package size={16} />
+                  <b>
+                    العميل عنده سلة محفوظة: {cartLines.length + cartUnavailable.length} صنف
+                    {cartRaw.updatedAt ? ` — آخر تحديث ${fmtDateTime(cartRaw.updatedAt)}` : ""}
+                  </b>
+                </div>
+                {cartLines.length > 0 && (
+                  <ul style={{ margin: "4px 0", paddingInlineStart: 20, fontSize: 13 }}>
+                    {cartLines.map((l, n) => (
+                      <li key={`${l.id}:${l.variantId || ""}:${n}`}>
+                        {l.name} × {l.qty}{!(Number(l.stock_qty) > 0) ? " (غير متوفر)" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {cartUnavailable.length > 0 && (
+                  <div style={{ fontSize: 12.5 }}>
+                    <span className="cell-debt">أصناف لم تعد متاحة ولن تُضاف:</span>
+                    <ul style={{ margin: "2px 0", paddingInlineStart: 20 }}>
+                      {cartUnavailable.map((u, n) => (
+                        <li key={n} className="cell-muted">{typeof u === "string" ? u : (u?.name || "صنف لم يعد متوفرًا")}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                  {cartLines.length > 0 && (
+                    <button className="invoice-action-btn" onClick={() => { loadCartIntoOrder(); setCartDismissedFor(customerId); }}>
+                      تحميل السلة في الطلبية
+                    </button>
+                  )}
+                  <button className="invoice-action-btn" onClick={() => setCartDismissedFor(customerId)}>تجاهل</button>
+                </div>
+              </div>
+            )}
+            {cartLoaded && !showCartBox && items.length > 0 && (
+              <p className="hint">تم تحميل سلة العميل في الأصناف المضافة أدناه — راجع الكميات ثم أنشئ الطلبية.</p>
+            )}
 
             {sectionId && (
               <>
@@ -893,7 +981,14 @@ function CreateOrderView({ onCreated }) {
         {create.error && <p className="field-error">{create.error}</p>}
         <div className="add-form-actions">
           <button className="btn-primary" disabled={!canSubmit || create.pending}
-            onClick={() => create.run().then((order) => { resetForm(); onCreated(order); }).catch(() => {})}>
+            onClick={() => {
+              const cid = customerId;
+              create.run().then((order) => {
+                // نظّف سلة العميل المحفوظة بعد نجاح الطلبية (بدون انتظار، والأخطاء تُتجاهل)
+                try { Promise.resolve(api.clearCustomerCart(cid)).catch(() => {}); } catch { /* تجاهل */ }
+                resetForm(); onCreated(order);
+              }).catch(() => {});
+            }}>
             {create.pending ? "جارٍ الإنشاء…" : "إنشاء الطلبية وإرسالها للمراجعة"}
           </button>
         </div>
@@ -2867,6 +2962,7 @@ function DeliveryView({ can }) {
 function CatalogManagerView({ can }) {
   const [tab, setTab] = useState("all");
   const canApprove = can("catalog.approve_products");
+  const canManage = can("catalog.manage");
   const pending = useFetch(
     () => (canApprove ? api.products({ approvalStatus: "pending" }) : Promise.resolve([])),
     []
@@ -2874,18 +2970,79 @@ function CatalogManagerView({ can }) {
   const pendingCount = pending.data?.length ?? 0;
   return (
     <div className="screen">
-      {canApprove && (
+      {(canApprove || canManage) && (
         <div className="chip-row" style={{ marginBottom: 12 }}>
           <button className={"chip" + (tab === "all" ? " chip-active" : "")} onClick={() => setTab("all")}>كل الأصناف</button>
-          <button className={"chip" + (tab === "pending" ? " chip-active" : "")} onClick={() => setTab("pending")}
+          {canManage && (
+            <button className={"chip" + (tab === "searches" ? " chip-active" : "")} onClick={() => setTab("searches")}>كشف البحث</button>
+          )}
+          {canApprove && <button className={"chip" + (tab === "pending" ? " chip-active" : "")} onClick={() => setTab("pending")}
             style={pendingCount > 0 && tab !== "pending" ? { borderColor: "var(--orange, #f97316)" } : undefined}>
             أصناف بانتظار الموافقة{pendingCount > 0 ? ` (${pendingCount})` : ""}
-          </button>
+          </button>}
         </div>
       )}
       {tab === "pending" && canApprove
         ? <PendingProductsSettings onChanged={pending.reload} />
+        : tab === "searches" && canManage
+        ? <SearchLogView />
         : <CatalogProductsPane can={can} onChanged={pending.reload} />}
+    </div>
+  );
+}
+
+/* كشف البحث — ما بحث عنه العملاء (يساعد في معرفة الأصناف المطلوبة وغير الموجودة) */
+function SearchLogView() {
+  const [days, setDays] = useState(30);
+  const [onlyEmpty, setOnlyEmpty] = useState(false);
+  const [q, setQ] = useState("");
+  const { data, loading, error, reload } = useFetch(
+    (s) => api.searchLogAdmin({ days, onlyEmpty, q }, s), [days, onlyEmpty, q]
+  );
+  const rows = data?.rows ?? [];
+  const totals = data?.totals ?? {};
+
+  return (
+    <div>
+      <div className="toolbar-row">
+        <div className="chip-row">
+          {[[7, "آخر 7 أيام"], [30, "آخر 30 يوم"], [90, "آخر 90 يوم"]].map(([d, label]) => (
+            <button key={d} className={"chip" + (days === d ? " chip-active" : "")} onClick={() => setDays(d)}>{label}</button>
+          ))}
+          <button className={"chip" + (onlyEmpty ? " chip-active" : "")} onClick={() => setOnlyEmpty((v) => !v)}>بدون نتائج فقط</button>
+        </div>
+        <SearchBar inline value={q} onChange={setQ} placeholder="ابحث في الكلمات..." />
+      </div>
+
+      <div className="stat-grid">
+        <Stat label="إجمالي عمليات البحث" value={Number(totals.searches ?? 0)} />
+        <Stat label="كلمات مختلفة" value={Number(totals.distinctQueries ?? 0)} />
+        <Stat label="كلمات بدون نتائج" value={Number(totals.zeroResultQueries ?? 0)} debt={Number(totals.zeroResultQueries ?? 0) > 0} />
+      </div>
+
+      {loading ? <Spinner />
+       : error ? <ErrorState message={error} onRetry={reload} />
+       : !rows.length ? <Empty icon={Search} text="لا توجد عمليات بحث مسجّلة في هذه الفترة. هذا الكشف يسجّل كلمات البحث التي يكتبها العملاء في تطبيقهم، لتعرف ماذا يطلبون وما غير الموجود عندكم." />
+       : (
+        <table className="data-table">
+          <thead><tr>
+            <th>الكلمة</th><th>عدد المرات</th><th>عدد العملاء</th><th>آخر نتائج</th><th>آخر بحث</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.normalized}>
+                <td>{r.sample || r.normalized}</td>
+                <td className="cell-amount">{r.searches}</td>
+                <td className="cell-muted">{r.customers}</td>
+                <td className={Number(r.lastResults) === 0 ? "cell-debt" : "cell-muted"}>
+                  {Number(r.lastResults) === 0 ? <b>غير موجود</b> : r.lastResults}
+                </td>
+                <td className="cell-muted">{day(r.lastAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -5720,6 +5877,41 @@ th{background:#181d2a;color:#fff;font-family:'Cairo',sans-serif}
   w.document.close();
 }
 
+// سلة العميل الحالية (للعرض فقط) — تختفي بصمت لو ما فيه سلة أو الموظف ما عنده صلاحية
+function CustomerCartSection({ customerId }) {
+  const cart = useFetch(
+    (s) => api.customerCart(customerId, s).catch((e) => { if (e?.name === "AbortError") throw e; return null; }), [customerId]
+  );
+  const d = cart.data;
+  const lines = d ? (Array.isArray(d.lines) ? d.lines : (d.lines?.items ?? [])) : [];
+  const unavailable = d ? (Array.isArray(d.unavailable) ? d.unavailable : (d.lines?.unavailable ?? [])) : [];
+  if (cart.loading || !d || (!lines.length && !unavailable.length)) return null;
+  const total = lines.reduce((s, l) => s + Number(l.price || 0) * Number(l.qty || 0), 0);
+  return (
+    <div className="detail-card" style={{ maxWidth: 640, marginBottom: 20 }}>
+      <h2 className="subsection-heading">سلة العميل الحالية</h2>
+      {d.updatedAt && <p className="hint">آخر تحديث: {fmtDateTime(d.updatedAt)}</p>}
+      <table className="data-table" style={{ marginBottom: 8 }}>
+        <thead><tr><th>الصنف</th><th>المورد</th><th>الكمية</th><th>السعر</th></tr></thead>
+        <tbody>
+          {lines.map((l, n) => (
+            <tr key={`${l.id}:${l.variantId || ""}:${n}`}>
+              <td>{l.name}</td>
+              <td className="cell-muted">{l.supplier_name}</td>
+              <td className="cell-muted">{l.qty} {l.unit}</td>
+              <td className="cell-amount">{money(Number(l.price) * Number(l.qty))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {lines.length > 0 && <p className="hint">الإجمالي التقديري: {money(total)}</p>}
+      {unavailable.length > 0 && (
+        <p className="hint">أصناف لم تعد متاحة: {unavailable.map((u) => (typeof u === "string" ? u : u?.name || "صنف")).join("، ")}</p>
+      )}
+    </div>
+  );
+}
+
 function LedgerView({ kind, id, name }) {
   const { data, loading, error, reload } = useFetch(
     (s) => (kind === "customer" ? api.customerLedger(id, s) : api.supplierLedger(id, s)), [kind, id]
@@ -5747,6 +5939,8 @@ function LedgerView({ kind, id, name }) {
           <Stat label={balanceLabel} value={money(Math.abs(last))} debt={isDebtor} credit={!isDebtor && last !== 0} />
         </div>
       </div>
+
+      {kind === "customer" && <CustomerCartSection customerId={id} />}
 
       <h2 className="subsection-heading">حركة الحساب</h2>
       <button className="btn-ghost" style={{ marginBottom: 10 }}
