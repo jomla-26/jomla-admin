@@ -246,6 +246,66 @@ function SearchBar({ value, onChange, placeholder, inline }) {
   );
 }
 
+/* ---------------- فلتر الفترة (من / إلى) — مشترك بين كل الشاشات ---------------- */
+
+// تاريخ اليوم بتوقيت طرابلس (YYYY-MM-DD) — نفس توقيت الخادم
+const tripoliToday = () => {
+  try { return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Tripoli" }); }
+  catch { return new Date().toISOString().slice(0, 10); }
+};
+const shiftDay = (iso, delta) => {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+};
+const NO_RANGE = { from: "", to: "" };
+// يحوّل الفترة لباراميترات الطلب (القيم الفاضية تنحذف في request)
+const rangeParams = (r) => ({ from: r?.from || undefined, to: r?.to || undefined });
+// نص الفترة للعرض/الطباعة
+const rangeLabel = (r) => {
+  if (r?.from && r?.to) return `من ${r.from} إلى ${r.to}`;
+  if (r?.from) return `من ${r.from}`;
+  if (r?.to) return `حتى ${r.to}`;
+  return "كل الفترات";
+};
+const RANGE_CHIPS_DEFAULT = [
+  { label: "اليوم", get: () => { const t = tripoliToday(); return { from: t, to: t }; } },
+  { label: "7 أيام", get: () => { const t = tripoliToday(); return { from: shiftDay(t, -6), to: t }; } },
+  { label: "هذا الشهر", get: () => { const t = tripoliToday(); return { from: t.slice(0, 8) + "01", to: t }; } },
+  { label: "الكل", get: () => NO_RANGE },
+];
+// أزرار سجل البحث: 7 / 30 / 90 يوم (+ الكل)
+const RANGE_CHIPS_DAYS = [7, 30, 90].map((n) => ({
+  label: `${n} يوم`, get: () => { const t = tripoliToday(); return { from: shiftDay(t, -(n - 1)), to: t }; },
+})).concat([{ label: "الكل", get: () => NO_RANGE }]);
+
+function DateRangeBar({ value, onChange, chips = RANGE_CHIPS_DEFAULT, style }) {
+  const v = value || NO_RANGE;
+  const set = (patch) => onChange({ ...v, ...patch });
+  const isActive = (c) => { const g = c.get(); return g.from === v.from && g.to === v.to; };
+  const invalid = v.from && v.to && v.from > v.to;
+  return (
+    <div className="date-range-bar" style={style}>
+      <label className="drb-field"><span>من</span>
+        <input type="date" value={v.from} max={v.to || undefined} onChange={(e) => set({ from: e.target.value })} />
+      </label>
+      <label className="drb-field"><span>إلى</span>
+        <input type="date" value={v.to} min={v.from || undefined} onChange={(e) => set({ to: e.target.value })} />
+      </label>
+      <div className="chip-row drb-chips">
+        {chips.map((c) => (
+          <button type="button" key={c.label} className={"chip" + (isActive(c) ? " chip-active" : "")}
+            onClick={() => onChange(c.get())}>{c.label}</button>
+        ))}
+        {(v.from || v.to) && (
+          <button type="button" className="link-btn" onClick={() => onChange(NO_RANGE)}>مسح</button>
+        )}
+      </div>
+      {invalid && <span className="field-error" style={{ margin: 0 }}>تاريخ البداية بعد تاريخ النهاية</span>}
+    </div>
+  );
+}
+
 function Stat({ label, value, debt, credit }) {
   return (
     <div className={"stat-box" + (debt ? " stat-box-debt" : credit ? " stat-box-credit" : "")}>
@@ -557,9 +617,10 @@ function AllOrdersView({ onOpen }) {
   const [targetStatus, setTargetStatus] = useState("");
   const [driverId, setDriverId] = useState("");
   const [showBulkForm, setShowBulkForm] = useState(false);
+  const [range, setRange] = useState(NO_RANGE);
 
   const { data, loading, error, reload } = useFetch(
-    (s) => api.orders(status === "all" ? undefined : { status }, s), [status]
+    (s) => api.orders({ ...(status === "all" ? {} : { status }), ...rangeParams(range) }, s), [status, range.from, range.to]
   );
   const drivers = useFetch((s) => api.driversCash(s).catch(() => []), []);
 
@@ -627,6 +688,7 @@ function AllOrdersView({ onOpen }) {
         </div>
         <SearchBar inline value={query} onChange={setQuery} placeholder="ابحث برقم الفاتورة..." />
       </div>
+      <DateRangeBar value={range} onChange={(r) => { setRange(r); clearSelection(); }} />
 
       {selected.size > 0 && (
         <div className="bulk-bar">
@@ -1002,8 +1064,9 @@ function CreateOrderView({ onCreated }) {
 function ReviewQueue({ onOpen }) {
   const [status, setStatus] = useState("under_review");
   const [query, setQuery] = useState("");
+  const [range, setRange] = useState(NO_RANGE);
   const { data, loading, error, reload } = useFetch(
-    (s) => api.orders(status === "all" ? undefined : { status }, s), [status]
+    (s) => api.orders({ ...(status === "all" ? {} : { status }), ...rangeParams(range) }, s), [status, range.from, range.to]
   );
 
   const filters = [
@@ -1028,6 +1091,7 @@ function ReviewQueue({ onOpen }) {
         </div>
         <SearchBar inline value={query} onChange={setQuery} placeholder="ابحث برقم الفاتورة..." />
       </div>
+      <DateRangeBar value={range} onChange={setRange} />
 
       {loading ? <Spinner />
        : error ? <ErrorState message={error} onRetry={reload} />
@@ -1995,13 +2059,15 @@ function CommissionRateEditor({ supplier, onDone }) {
 // سجل نشاط تفصيلي لحساب واحد (مورد أو عميل) — كل العمليات اللي قام بها هو نفسه
 // (إضافة/تعديل أصناف، حركات مخزون، تأكيد توفر، تسليم...) في مكان واحد
 function AccountActivityLog({ actorId }) {
+  const [range, setRange] = useState(NO_RANGE);
   const { data, loading, error, reload } = useFetch(
-    (s) => api.auditLogs({ actorId, limit: 100 }, s), [actorId]
+    (s) => api.auditLogs({ actorId, limit: 100, ...rangeParams(range) }, s), [actorId, range.from, range.to]
   );
 
   return (
     <div className="sections-editor">
       <label className="field-label">سجل نشاط هذا الحساب</label>
+      <DateRangeBar value={range} onChange={setRange} />
       {loading ? <Spinner />
        : error ? <ErrorState message={error} onRetry={reload} />
        : !data?.length ? <Empty icon={History} text="لا توجد عمليات مسجّلة لهذا الحساب" />
@@ -2482,7 +2548,8 @@ function EmployancePanel({ employeeId }) {
 }
 
 function AttendanceTab({ employeeId }) {
-  const { data, loading, error, reload } = useFetch(() => api.attendance(employeeId), [employeeId]);
+  const [range, setRange] = useState(NO_RANGE);
+  const { data, loading, error, reload } = useFetch(() => api.attendance(employeeId, rangeParams(range)), [employeeId, range.from, range.to]);
   const [form, setForm] = useState({
     workDate: new Date().toISOString().slice(0, 10), checkIn: "", checkOut: "", status: "present",
   });
@@ -2511,11 +2578,12 @@ function AttendanceTab({ employeeId }) {
           onClick={() => save.run().then(reload).catch(() => {})}>{save.pending ? "…" : "تسجيل"}</button>
       </div>
       {save.error && <p className="field-error">{save.error}</p>}
+      <DateRangeBar value={range} onChange={setRange} />
       {loading ? <Spinner /> : error ? <ErrorState message={error} onRetry={reload} /> : (
         <table className="data-table">
           <thead><tr><th>التاريخ</th><th>حضور</th><th>انصراف</th><th>الساعات</th><th>الحالة</th></tr></thead>
           <tbody>
-            {(data ?? []).slice(0, 14).map((a) => (
+            {(range.from || range.to ? (data ?? []) : (data ?? []).slice(0, 14)).map((a) => (
               <tr key={a.id}>
                 <td className="cell-muted">{day(a.work_date)}</td>
                 <td className="cell-muted">{a.check_in ? new Date(a.check_in).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
@@ -2993,11 +3061,12 @@ function CatalogManagerView({ can }) {
 
 /* كشف البحث — ما بحث عنه العملاء (يساعد في معرفة الأصناف المطلوبة وغير الموجودة) */
 function SearchLogView() {
-  const [days, setDays] = useState(30);
+  // الافتراضي آخر 30 يوم (مثل السابق). بدون فترة = أقصى مدة يدعمها الخادم (365 يوم)
+  const [range, setRange] = useState(() => RANGE_CHIPS_DAYS[1].get());
   const [onlyEmpty, setOnlyEmpty] = useState(false);
   const [q, setQ] = useState("");
   const { data, loading, error, reload } = useFetch(
-    (s) => api.searchLogAdmin({ days, onlyEmpty, q }, s), [days, onlyEmpty, q]
+    (s) => api.searchLogAdmin({ days: 365, ...rangeParams(range), onlyEmpty, q }, s), [range.from, range.to, onlyEmpty, q]
   );
   const rows = data?.rows ?? [];
   const totals = data?.totals ?? {};
@@ -3006,13 +3075,12 @@ function SearchLogView() {
     <div>
       <div className="toolbar-row">
         <div className="chip-row">
-          {[[7, "آخر 7 أيام"], [30, "آخر 30 يوم"], [90, "آخر 90 يوم"]].map(([d, label]) => (
-            <button key={d} className={"chip" + (days === d ? " chip-active" : "")} onClick={() => setDays(d)}>{label}</button>
-          ))}
           <button className={"chip" + (onlyEmpty ? " chip-active" : "")} onClick={() => setOnlyEmpty((v) => !v)}>بدون نتائج فقط</button>
         </div>
         <SearchBar inline value={q} onChange={setQ} placeholder="ابحث في الكلمات..." />
       </div>
+      <DateRangeBar value={range} onChange={setRange} chips={RANGE_CHIPS_DAYS.slice(0, 3)} />
+      {!range.from && !range.to && <p className="hint">بدون فترة محددة: يعرض آخر 365 يوم (أقصى مدة يدعمها الخادم).</p>}
 
       <div className="stat-grid">
         <Stat label="إجمالي عمليات البحث" value={Number(totals.searches ?? 0)} />
@@ -4708,15 +4776,20 @@ const FEEDBACK_STATUS_LABELS = { open: "مفتوحة", in_progress: "قيد ال
 const RESOLUTION_LABELS = { replacement: "استبدال", discount: "خصم", credit_note: "رصيد دائن", no_action: "بدون إجراء" };
 
 function FeedbackPanel() {
-  const { data, loading, error, reload } = useFetch(() => api.feedbackList(), []);
-  if (loading) return <Spinner />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
-  if (!data?.length) return <Empty icon={Star} text="لا توجد تقييمات أو شكاوى بعد" />;
+  const [range, setRange] = useState(NO_RANGE);
+  const { data, loading, error, reload } = useFetch(() => api.feedbackList(rangeParams(range)), [range.from, range.to]);
+  const bar = <DateRangeBar value={range} onChange={setRange} />;
+  if (loading) return <>{bar}<Spinner /></>;
+  if (error) return <>{bar}<ErrorState message={error} onRetry={reload} /></>;
+  if (!data?.length) return <>{bar}<Empty icon={Star} text={range.from || range.to ? "لا توجد تقييمات أو شكاوى في هذه الفترة" : "لا توجد تقييمات أو شكاوى بعد"} /></>;
 
   return (
-    <div className="ledger-list">
-      {data.map((f) => <FeedbackRow key={f.id} item={f} onDone={reload} />)}
-    </div>
+    <>
+      {bar}
+      <div className="ledger-list">
+        {data.map((f) => <FeedbackRow key={f.id} item={f} onDone={reload} />)}
+      </div>
+    </>
   );
 }
 
@@ -4805,20 +4878,25 @@ function ReturnCreator({ order, onDone }) {
 const RETURN_STATUS_LABELS = { requested: "مطلوب", approved: "معتمد", rejected: "مرفوض", received: "تم الاستلام", refunded: "تم الاسترجاع" };
 
 function ReturnsPanel() {
-  const { data, loading, error, reload } = useFetch(() => api.returns(), []);
+  const [range, setRange] = useState(NO_RANGE);
+  const { data, loading, error, reload } = useFetch(() => api.returns(rangeParams(range)), [range.from, range.to]);
   const setStatus = useAction((id, body) => api.setReturnStatus(id, body));
 
-  if (loading) return <Spinner />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
-  if (!data?.length) return <Empty icon={RotateCcw} text="لا توجد طلبات إرجاع بعد" />;
+  const bar = <DateRangeBar value={range} onChange={setRange} />;
+  if (loading) return <>{bar}<Spinner /></>;
+  if (error) return <>{bar}<ErrorState message={error} onRetry={reload} /></>;
+  if (!data?.length) return <>{bar}<Empty icon={RotateCcw} text={range.from || range.to ? "لا توجد طلبات إرجاع في هذه الفترة" : "لا توجد طلبات إرجاع بعد"} /></>;
 
   return (
+    <>
+    {bar}
     <table className="data-table">
-      <thead><tr><th>رقم الإرجاع</th><th>الفاتورة</th><th>العميل</th><th>السبب</th><th>القيمة</th><th>الحالة</th><th></th></tr></thead>
+      <thead><tr><th>رقم الإرجاع</th><th>التاريخ</th><th>الفاتورة</th><th>العميل</th><th>السبب</th><th>القيمة</th><th>الحالة</th><th></th></tr></thead>
       <tbody>
         {data.map((r) => (
           <tr key={r.id}>
             <td className="cell-id">{r.return_number}</td>
+            <td className="cell-muted">{day(r.created_at) || "—"}</td>
             <td className="cell-muted">{r.order_number}</td>
             <td>{r.customer_name}</td>
             <td className="cell-muted">{r.reason}</td>
@@ -4847,6 +4925,7 @@ function ReturnsPanel() {
         ))}
       </tbody>
     </table>
+    </>
   );
 }
 
@@ -5100,10 +5179,12 @@ function StockVouchersForSupplier({ supplierId }) {
   const [creating, setCreating] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [openId, setOpenId] = useState(null);
+  const [range, setRange] = useState(NO_RANGE);
   const products = useFetch((s) => api.products({ supplierId }, s), [supplierId]);
   const sections = useFetch((s) => api.sections({ flat: 1 }, s), []);
   const { data, loading, error, reload } = useFetch(
-    (s) => api.stockVouchers({ supplierId, voucherType: typeFilter || undefined }, s), [supplierId, typeFilter]
+    (s) => api.stockVouchers({ supplierId, voucherType: typeFilter || undefined, ...rangeParams(range) }, s),
+    [supplierId, typeFilter, range.from, range.to]
   );
 
   const TYPE_LABELS = { addition: "إضافة", discount: "خصم" };
@@ -5145,6 +5226,7 @@ function StockVouchersForSupplier({ supplierId }) {
         <button className={"chip" + (typeFilter === "addition" ? " chip-active" : "")} onClick={() => setTypeFilter("addition")}>إضافة</button>
         <button className={"chip" + (typeFilter === "discount" ? " chip-active" : "")} onClick={() => setTypeFilter("discount")}>خصم</button>
       </div>
+      <DateRangeBar value={range} onChange={setRange} />
 
       {loading ? <Spinner />
        : error ? <ErrorState message={error} onRetry={reload} />
@@ -5673,9 +5755,11 @@ function InventoryReport({ onGo, sel, onPatch }) {
 }
 
 function OverviewReport() {
-  const { data, loading, error, reload } = useFetch((s) => api.orders(undefined, s), []);
-  if (loading) return <Spinner />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
+  const [range, setRange] = useState(NO_RANGE);
+  const { data, loading, error, reload } = useFetch((s) => api.orders(rangeParams(range), s), [range.from, range.to]);
+  const bar = <DateRangeBar value={range} onChange={setRange} />;
+  if (loading) return <>{bar}<Spinner /></>;
+  if (error) return <>{bar}<ErrorState message={error} onRetry={reload} /></>;
 
   const list = data ?? [];
   const active = list.filter((o) => o.status !== "cancelled");
@@ -5685,6 +5769,7 @@ function OverviewReport() {
 
   return (
     <>
+      {bar}
       <div className="stat-grid">
         <Stat label="إجمالي المبيعات" value={money(totalSales)} />
         <Stat label="عدد الطلبيات" value={list.length} />
@@ -5705,10 +5790,12 @@ function OverviewReport() {
 
 function CustomersReport({ onGo }) {
   const [query, setQuery] = useState("");
-  const { data, loading, error, reload } = useFetch((s) => api.orders(undefined, s), []);
+  const [range, setRange] = useState(NO_RANGE);
+  const { data, loading, error, reload } = useFetch((s) => api.orders(rangeParams(range), s), [range.from, range.to]);
   const balances = useFetch((s) => api.customerBalances(s), []);
-  if (loading) return <Spinner />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
+  const bar = <DateRangeBar value={range} onChange={setRange} />;
+  if (loading) return <>{bar}<Spinner /></>;
+  if (error) return <>{bar}<ErrorState message={error} onRetry={reload} /></>;
 
   const balanceById = new Map((balances.data ?? []).map((b) => [b.id, Number(b.balance)]));
 
@@ -5731,7 +5818,9 @@ function CustomersReport({ onGo }) {
 
   return (
     <>
+      {bar}
       <SearchBar value={query} onChange={setQuery} placeholder="ابحث عن عميل..." />
+      {(range.from || range.to) && <p className="hint">الطلبيات والمشتريات والمدفوع للفترة المحددة ({rangeLabel(range)}) — الرصيد إجمالي حتى اليوم.</p>}
       <table className="data-table">
         <thead><tr><th>العميل</th><th>الطلبيات</th><th>المشتريات</th><th>المدفوع</th><th>الرصيد</th></tr></thead>
         <tbody>
@@ -5804,9 +5893,10 @@ function SuppliersReport({ onGo }) {
 
 function SupplierStockLog({ id, name }) {
   const [query, setQuery] = useState("");
+  const [range, setRange] = useState(NO_RANGE);
   const { data, loading, error, reload } = useFetch(
-    (s) => api.stockMovements({ supplierId: id, search: query.trim() || undefined }, s),
-    [id, query]
+    (s) => api.stockMovements({ supplierId: id, search: query.trim() || undefined, ...rangeParams(range) }, s),
+    [id, query, range.from, range.to]
   );
 
   return (
@@ -5816,6 +5906,7 @@ function SupplierStockLog({ id, name }) {
         <p className="order-row-meta">سجل حركة المخزون — كل عمليات الإضافة والسحب على أصناف هذا المورد</p>
       </div>
       <SearchBar value={query} onChange={setQuery} placeholder="ابحث باسم الصنف أو السبب..." />
+      <DateRangeBar value={range} onChange={setRange} />
       {loading ? <Spinner />
        : error ? <ErrorState message={error} onRetry={reload} />
        : !data?.length ? <Empty icon={Package} text="لا توجد حركات مسجّلة بعد" />
@@ -5843,13 +5934,15 @@ function SupplierStockLog({ id, name }) {
 
 // طباعة/حفظ PDF لكشف حركة الحساب — النافذة تُفتح فورًا عند الضغط (قبل أي انتظار)
 // عشان المتصفح ما يحظرها كنافذة منبثقة
-function openLedgerStatement({ title, partyName, rows, balanceLabel }) {
+function openLedgerStatement({ title, partyName, rows, balanceLabel, period, colLabels = ["مدين", "دائن"] }) {
   const w = window.open("", "_blank");
   if (!w) return alert("يرجى السماح بالنوافذ المنبثقة لعرض الكشف.");
   const d = (r) => String(r.entry_date || "").slice(0, 10);
-  const totalDebit = rows.reduce((s, r) => s + Number(r.debit || 0), 0);
-  const totalCredit = rows.reduce((s, r) => s + Number(r.credit || 0), 0);
-  const body = rows.map((r, i) => `<tr><td>${i + 1}</td><td>${d(r)}</td><td>${esc(r.label)}</td><td>${esc(r.reference || "—")}</td>
+  // صف "رصيد سابق" الاصطناعي ما يدخل في إجمالي المدين/الدائن (هو رصيد افتتاحي مو حركة)
+  const totalDebit = rows.reduce((s, r) => s + (r.is_opening ? 0 : Number(r.debit || 0)), 0);
+  const totalCredit = rows.reduce((s, r) => s + (r.is_opening ? 0 : Number(r.credit || 0)), 0);
+  let n = 0;
+  const body = rows.map((r) => `<tr${r.is_opening ? ' style="background:#fff1e8;font-weight:700"' : ""}><td>${r.is_opening ? "—" : ++n}</td><td>${d(r)}</td><td>${esc(r.label)}</td><td>${esc(r.reference || "—")}</td>
     <td>${esc(r.voucher_number || "—")}</td><td>${Number(r.debit) > 0 ? Number(r.debit).toFixed(2) : "—"}</td>
     <td>${Number(r.credit) > 0 ? Number(r.credit).toFixed(2) : "—"}</td><td>${Math.abs(Number(r.balance)).toFixed(2)}</td></tr>`).join("");
   w.document.open();
@@ -5870,9 +5963,10 @@ th{background:#181d2a;color:#fff;font-family:'Cairo',sans-serif}
 <div class="pdf-toolbar"><button onclick="window.print()">🖨️ طباعة / حفظ PDF</button><button onclick="window.close()">✕ إغلاق</button></div>
 <div class="sheet"><img src="${LOGO_FULL}" alt="${COMPANY.name}" style="height:44px;display:block;margin-bottom:10px"/>
 <h2>${esc(title)}</h2><div class="meta">${esc(partyName)} · ${COMPANY.name} · ${new Date().toISOString().slice(0, 10)}</div>
-<table><thead><tr><th>#</th><th>التاريخ</th><th>البيان</th><th>الفاتورة</th><th>الإيصال</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
+<div class="meta" style="color:#181d2a;font-weight:700">الفترة: ${esc(period || "كل الفترات")}</div>
+<table><thead><tr><th>#</th><th>التاريخ</th><th>البيان</th><th>الفاتورة</th><th>الإيصال</th><th>${colLabels[0]}</th><th>${colLabels[1]}</th><th>الرصيد</th></tr></thead>
 <tbody>${body || '<tr><td colspan="8">لا توجد حركة</td></tr>'}</tbody></table>
-<div class="sum"><div>إجمالي المدين: ${totalDebit.toFixed(2)} د.ل</div><div>إجمالي الدائن: ${totalCredit.toFixed(2)} د.ل</div><div>${esc(balanceLabel)}</div></div>
+<div class="sum"><div>إجمالي ${colLabels[0]}: ${totalDebit.toFixed(2)} د.ل</div><div>إجمالي ${colLabels[1]}: ${totalCredit.toFixed(2)} د.ل</div><div>${esc(balanceLabel)}</div></div>
 </div></body></html>`);
   w.document.close();
 }
@@ -5913,16 +6007,20 @@ function CustomerCartSection({ customerId }) {
 }
 
 function LedgerView({ kind, id, name }) {
+  const [range, setRange] = useState(NO_RANGE);
   const { data, loading, error, reload } = useFetch(
-    (s) => (kind === "customer" ? api.customerLedger(id, s) : api.supplierLedger(id, s)), [kind, id]
+    (s) => (kind === "customer" ? api.customerLedger(id, rangeParams(range)) : api.supplierLedger(id, rangeParams(range))),
+    [kind, id, range.from, range.to]
   );
-  if (loading) return <Spinner />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
+  const bar = <DateRangeBar value={range} onChange={setRange} />;
+  if (loading) return <div className="screen">{bar}<Spinner /></div>;
+  if (error) return <div className="screen">{bar}<ErrorState message={error} onRetry={reload} /></div>;
 
   const rows = data ?? [];
   const last = rows.length ? Number(rows[rows.length - 1].balance) : 0;
-  const debit = rows.reduce((s, r) => s + Number(r.debit), 0);
-  const credit = rows.reduce((s, r) => s + Number(r.credit), 0);
+  // صف "رصيد سابق" (is_opening) يظهر بالجدول لكنه ما يدخل في إجمالي المدين/الدائن
+  const debit = rows.reduce((s, r) => s + (r.is_opening ? 0 : Number(r.debit)), 0);
+  const credit = rows.reduce((s, r) => s + (r.is_opening ? 0 : Number(r.credit)), 0);
   // للعميل: موجب = مدين (يدين للشركة). للمورد: موجب = دائن (الشركة تدين له) — راجع finance.js لاتجاه الجمع بكل حالة
   const isDebtor = kind === "customer" ? last > 0 : last < 0;
   const balanceLabel = kind === "customer"
@@ -5931,8 +6029,10 @@ function LedgerView({ kind, id, name }) {
 
   return (
     <div className="screen">
+      {bar}
       <div className="detail-card" style={{ maxWidth: 640, marginBottom: 20 }}>
         <span className="order-row-id">{name}</span>
+        <p className="order-row-meta">الفترة: {rangeLabel(range)}</p>
         <div className="stat-grid" style={{ marginTop: 12, marginBottom: 0 }}>
           <Stat label={kind === "customer" ? "إجمالي الفواتير (مدين)" : "إجمالي المدفوع (مدين)"} value={money(debit)} />
           <Stat label={kind === "customer" ? "إجمالي المقبوض (دائن)" : "إجمالي الفواتير (دائن)"} value={money(credit)} />
@@ -5946,14 +6046,14 @@ function LedgerView({ kind, id, name }) {
       <button className="btn-ghost" style={{ marginBottom: 10 }}
         onClick={() => openLedgerStatement({
           title: kind === "customer" ? "كشف حساب عميل" : "كشف حساب مورد", partyName: name, rows,
-          balanceLabel: `${balanceLabel}: ${money(Math.abs(last))}`,
+          balanceLabel: `${balanceLabel}: ${money(Math.abs(last))}`, period: rangeLabel(range),
         })}>🖨️ طباعة / PDF لكشف الحساب</button>
       <table className="data-table">
         <thead><tr><th>التاريخ</th><th>البيان</th><th>رقم الفاتورة</th><th>رقم الإيصال</th>
           <th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr key={i} style={r.is_opening ? { background: "var(--orange-soft)", fontWeight: 700 } : undefined}>
               <td className="cell-muted">{day(r.entry_date)}</td>
               <td>{r.label}</td>
               <td className="cell-muted">{r.reference || "—"}</td>
@@ -5971,9 +6071,11 @@ function LedgerView({ kind, id, name }) {
 }
 
 function ItemDetail({ productId, can }) {
-  const { data, loading, error, reload } = useFetch((s) => api.productMovement(productId, s), [productId]);
+  const [range, setRange] = useState(NO_RANGE);
+  const { data, loading, error, reload } = useFetch((s) => api.productMovement(productId, rangeParams(range)), [productId, range.from, range.to]);
   const [showHistory, setShowHistory] = useState(false);
-  if (loading) return <Spinner />;
+  // نعرض السبنر فقط عند أول تحميل — تغيير الفترة يحافظ على الصفحة ويحدّث جدول الحركة
+  if (loading && !data) return <Spinner />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   const { product, movement } = data ?? {};
   if (!product) return null;
@@ -6010,6 +6112,8 @@ function ItemDetail({ productId, can }) {
       )}
 
       <h2 className="subsection-heading">حركة البيع</h2>
+      <DateRangeBar value={range} onChange={setRange} />
+      {loading && <p className="hint">جارٍ تحديث الحركة…</p>}
       <table className="data-table">
         <thead><tr><th>التاريخ</th><th>رقم الفاتورة</th><th>الكمية</th><th>السعر</th><th>القيمة</th><th>هامش الربح</th></tr></thead>
         <tbody>
@@ -6034,7 +6138,8 @@ function ItemDetail({ productId, can }) {
 
 // فاتورة إضافة (+) أو خصم (−) لمخزون صنف — يستخدمها الأدمن، بنفس آلية المورد بالظبط
 function AdminStockHistoryModal({ productId, onClose }) {
-  const { data, loading, error } = useFetch(() => api.stockHistory(productId), [productId]);
+  const [range, setRange] = useState(NO_RANGE);
+  const { data, loading, error } = useFetch(() => api.stockHistory(productId, rangeParams(range)), [productId, range.from, range.to]);
 
   return (
     <div className="login-card" style={{ marginTop: 10, marginBottom: 20 }}>
@@ -6042,8 +6147,9 @@ function AdminStockHistoryModal({ productId, onClose }) {
         <span>سجل حركة المخزون</span>
         <button className="link-btn" onClick={onClose}>إغلاق</button>
       </div>
+      <DateRangeBar value={range} onChange={setRange} />
       {loading ? <Spinner /> : error ? <p className="field-error">{error}</p> : (
-        !data?.length ? <p className="hint">لا توجد حركات مسجّلة بعد</p> : (
+        !data?.length ? <p className="hint">لا توجد حركات مسجّلة {(range.from || range.to) ? "في هذه الفترة" : "بعد"}</p> : (
           <div className="ledger-list">
             {data.map((m) => (
               <div className="ledger-row" key={m.id}>
@@ -6153,9 +6259,10 @@ function PriceRuleForm({ productId, onClose, onDone }) {
 
 function TreasuryReport({ onGo }) {
   const [sub, setSub] = useState("vouchers");
+  const [range, setRange] = useState(NO_RANGE);
   const treasuries = useFetch((s) => api.treasuries(s), []);
-  const vouchers = useFetch((s) => api.vouchers(undefined, s), []);
-  const expenses = useFetch((s) => api.expenses(undefined, s), [], { skip: sub !== "expenses" });
+  const vouchers = useFetch((s) => api.vouchers(rangeParams(range), s), [range.from, range.to]);
+  const expenses = useFetch((s) => api.expenses(rangeParams(range), s), [range.from, range.to], { skip: sub !== "expenses" });
   const drivers = useFetch((s) => api.driversCash(s), [], { skip: sub !== "drivers" });
   const settleDriver = useAction((id, amt) => api.settleDriver(id, amt));
   const [query, setQuery] = useState("");
@@ -6188,6 +6295,8 @@ function TreasuryReport({ onGo }) {
           <button className={"chip" + (sub === "expenses" ? " chip-active" : "")} onClick={() => setSub("expenses")}>كشف المصروفات</button>
           <button className={"chip" + (sub === "hawala" ? " chip-active" : "")} onClick={() => setSub("hawala")}>خزينة الحوالات</button>
           <button className={"chip" + (sub === "drivers" ? " chip-active" : "")} onClick={() => setSub("drivers")}>تحصيلات المندوبين</button>
+          <button className={"chip" + (sub === "statement" ? " chip-active" : "")} onClick={() => setSub("statement")}>كشف حركة الخزينة</button>
+          <button className={"chip" + (sub === "transfers" ? " chip-active" : "")} onClick={() => setSub("transfers")}>التحويلات بين الخزائن</button>
           <button className="chip chip-add" onClick={() => setForm(form === "receipt" ? null : "receipt")}>
             <Plus size={14} style={{ verticalAlign: "-2px", marginLeft: 4 }} /> إيصال قبض
           </button>
@@ -6201,8 +6310,10 @@ function TreasuryReport({ onGo }) {
             <Plus size={14} style={{ verticalAlign: "-2px", marginLeft: 4 }} /> تحويل بين الخزائن
           </button>
         </div>
-        <SearchBar inline value={query} onChange={setQuery} placeholder="ابحث برقم الإيصال أو الاسم..." />
+        {(sub === "vouchers" || sub === "hawala" || sub === "expenses") &&
+          <SearchBar inline value={query} onChange={setQuery} placeholder="ابحث برقم الإيصال أو الاسم..." />}
       </div>
+      {sub !== "drivers" && <DateRangeBar value={range} onChange={setRange} />}
 
       {form === "transfer" ? <TransferForm treasuries={treasuries.data ?? []} onClose={() => setForm(null)} onDone={refresh} />
        : form === "expense" ? <ExpenseForm onClose={() => setForm(null)} onDone={refresh} />
@@ -6222,7 +6333,9 @@ function TreasuryReport({ onGo }) {
         />
       )}
 
-      {sub === "drivers" ? (
+      {sub === "statement" ? <TreasuryStatement treasuries={treasuries.data ?? []} range={range} />
+      : sub === "transfers" ? <TransfersList treasuries={treasuries.data ?? []} range={range} />
+      : sub === "drivers" ? (
         drivers.loading ? <Spinner />
          : drivers.error ? <ErrorState message={drivers.error} onRetry={drivers.reload} />
          : !(drivers.data ?? []).length ? <Empty icon={Wallet} text="لا يوجد مندوبون نشطون" />
@@ -6344,6 +6457,115 @@ function TreasuryReport({ onGo }) {
         </table>
       )}
     </>
+  );
+}
+
+// أخطاء "المسار غير موجود" — الخادم قد لا يوفّر كشف الخزينة/قائمة التحويلات بعد
+const isMissingEndpoint = (e) => [404, 405, 501].includes(e?.status);
+const rowsOf = (d) => (Array.isArray(d) ? d : (d?.rows ?? d?.items ?? d?.transactions ?? []));
+const UNSUPPORTED_MSG = "هذا الكشف غير متوفر في الخادم حاليًا — حدّث الخادم (API) لتفعيله.";
+
+// كشف حركة خزينة واحدة: رصيد سابق + حركة الفترة مع رصيد جاري
+function TreasuryStatement({ treasuries, range }) {
+  const [code, setCode] = useState("");
+  const chosen = code || treasuries[0]?.code || "";
+  const { data, loading, error, reload } = useFetch(
+    () => api.treasuryStatement(chosen, rangeParams(range))
+      .catch((e) => { if (isMissingEndpoint(e)) return { unsupported: true }; throw e; }),
+    [chosen, range.from, range.to], { skip: !chosen }
+  );
+  const rows = rowsOf(data);
+  const inOf = (r) => Number(r.in_amount ?? r.debit ?? 0);
+  const outOf = (r) => Number(r.out_amount ?? r.credit ?? 0);
+  const totalIn = rows.reduce((s, r) => s + (r.is_opening ? 0 : inOf(r)), 0);
+  const totalOut = rows.reduce((s, r) => s + (r.is_opening ? 0 : outOf(r)), 0);
+  const last = rows.length ? Number(rows[rows.length - 1].balance) : 0;
+  const tName = treasuries.find((t) => t.code === chosen)?.name || chosen;
+
+  function printIt() {
+    openLedgerStatement({
+      title: "كشف حركة خزينة", partyName: tName, period: rangeLabel(range),
+      rows: rows.map((r) => ({
+        entry_date: r.entry_date ?? r.created_at ?? r.date, label: r.label ?? r.description ?? r.type,
+        reference: r.reference ?? r.number ?? "", voucher_number: r.voucher_number ?? null,
+        debit: inOf(r), credit: outOf(r), balance: r.balance, is_opening: r.is_opening,
+      })),
+      balanceLabel: `الرصيد: ${money(last)}`, colLabels: ["وارد", "صادر"],
+    });
+  }
+
+  return (
+    <>
+      <div style={{ maxWidth: 320 }}>
+        <label className="field-label">الخزينة</label>
+        <select className="field-input" value={chosen} onChange={(e) => setCode(e.target.value)}>
+          {treasuries.map((t) => <option key={t.id} value={t.code}>{t.name}</option>)}
+        </select>
+      </div>
+      {!chosen ? <Empty icon={Wallet} text="لا توجد خزائن" />
+       : loading ? <Spinner />
+       : data?.unsupported ? <p className="hint">{UNSUPPORTED_MSG}</p>
+       : error ? <ErrorState message={error} onRetry={reload} />
+       : (
+        <>
+          <div className="stat-grid">
+            <Stat label="إجمالي الوارد" value={money(totalIn)} />
+            <Stat label="إجمالي الصادر" value={money(totalOut)} />
+            <Stat label="الرصيد في نهاية الفترة" value={money(last)} />
+          </div>
+          <button className="btn-ghost" style={{ marginBottom: 10 }} onClick={printIt}>🖨️ طباعة / PDF لكشف الخزينة</button>
+          {!rows.length ? <Empty icon={Wallet} text="لا توجد حركة في هذه الفترة" /> : (
+            <table className="data-table">
+              <thead><tr><th>التاريخ</th><th>البيان</th><th>المرجع</th><th>وارد</th><th>صادر</th><th>الرصيد</th></tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} style={r.is_opening ? { background: "var(--orange-soft)", fontWeight: 700 } : undefined}>
+                    <td className="cell-muted">{day(r.entry_date ?? r.created_at ?? r.date)}</td>
+                    <td>{r.label ?? r.description ?? r.type ?? "—"}</td>
+                    <td className="cell-muted">{r.reference || r.voucher_number || r.number || "—"}</td>
+                    <td className="cell-muted">{inOf(r) > 0 ? money(inOf(r)) : "—"}</td>
+                    <td className="cell-muted">{outOf(r) > 0 ? money(outOf(r)) : "—"}</td>
+                    <td className="cell-amount">{money(r.balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+// قائمة التحويلات بين الخزائن ضمن الفترة
+function TransfersList({ treasuries, range }) {
+  const { data, loading, error, reload } = useFetch(
+    () => api.transfersList(rangeParams(range))
+      .catch((e) => { if (isMissingEndpoint(e)) return { unsupported: true }; throw e; }),
+    [range.from, range.to]
+  );
+  if (loading) return <Spinner />;
+  if (data?.unsupported) return <p className="hint">{UNSUPPORTED_MSG}</p>;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  const rows = rowsOf(data);
+  const nameOf = (id, code, name) => name || treasuries.find((t) => t.id === id || t.code === code)?.name || code || "—";
+  if (!rows.length) return <Empty icon={Wallet} text="لا توجد تحويلات في هذه الفترة" />;
+  return (
+    <table className="data-table">
+      <thead><tr><th>رقم التحويل</th><th>التاريخ</th><th>من خزينة</th><th>إلى خزينة</th><th>ملاحظة</th><th>المبلغ</th></tr></thead>
+      <tbody>
+        {rows.map((t, i) => (
+          <tr key={t.id ?? i}>
+            <td className="cell-id">{t.transfer_number || "—"}</td>
+            <td className="cell-muted">{day(t.created_at ?? t.transfer_date ?? t.date)}</td>
+            <td className="cell-muted">{nameOf(t.from_treasury_id, t.from_code, t.from_name)}</td>
+            <td className="cell-muted">{nameOf(t.to_treasury_id, t.to_code, t.to_name)}</td>
+            <td className="cell-muted">{t.note || "—"}</td>
+            <td className="cell-amount">{money(t.amount)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -6538,7 +6760,7 @@ function VoucherForm({ type, onClose, onDone }) {
   // رصيد الطرف الحالي (كم عليه أو كم له) — يساعد وقت تحديد قيمة الإيصال
   const { data: ledger } = useFetch(
     (s) => linkedType && form.partyId
-      ? (form.partyType === "customer" ? api.customerLedger(form.partyId, s) : api.supplierLedger(form.partyId, s))
+      ? (form.partyType === "customer" ? api.customerLedger(form.partyId) : api.supplierLedger(form.partyId))
       : Promise.resolve(null),
     [form.partyType, form.partyId]
   );
@@ -6771,18 +6993,22 @@ function DriverReturnFloatForm({ driverId, driverName, balance, onClose, onDone 
 
 function DriverLedgerView({ id, name }) {
   const wallet = useFetch((s) => api.driverWallet(id, s), [id]);
-  const { data, loading, error, reload } = useFetch((s) => api.driverWalletTransactions(id, s), [id]);
+  const [range, setRange] = useState(NO_RANGE);
+  const { data, loading, error, reload } = useFetch((s) => api.driverWalletTransactions(id, rangeParams(range)), [id, range.from, range.to]);
 
-  if (loading || wallet.loading) return <Spinner />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
+  const bar = <DateRangeBar value={range} onChange={setRange} />;
+  if (loading || wallet.loading) return <div className="screen">{bar}<Spinner /></div>;
+  if (error) return <div className="screen">{bar}<ErrorState message={error} onRetry={reload} /></div>;
 
   const rows = data ?? [];
   const w = wallet.data ?? {};
 
   return (
     <div className="screen">
+      {bar}
       <div className="detail-card" style={{ maxWidth: 640, marginBottom: 20 }}>
         <span className="order-row-id">{name}</span>
+        <p className="order-row-meta">ملخص المحفظة أدناه إجمالي حتى اليوم — جدول الحركة للفترة: {rangeLabel(range)}</p>
         <div className="stat-grid" style={{ marginTop: 12, marginBottom: 0 }}>
           <Stat label="عهدة مستلمة (إجمالي)" value={money(w.floatGiven)} />
           <Stat label="نقدية محصّلة (COD)" value={money(w.codInHand)} />
@@ -6797,7 +7023,7 @@ function DriverLedgerView({ id, name }) {
           <th>وارد</th><th>صادر</th><th>الرصيد</th></tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr key={i} style={r.is_opening ? { background: "var(--orange-soft)", fontWeight: 700 } : undefined}>
               <td className="cell-muted">{day(r.entry_date)}</td>
               <td>{r.label}</td>
               <td className="cell-muted">{r.voucher_number || "—"}</td>
@@ -6885,9 +7111,10 @@ function TransferForm({ treasuries = [], onClose, onDone }) {
 function AuditLogView({ can }) {
   const [entityType, setEntityType] = useState("");
   const [query, setQuery] = useState("");
+  const [range, setRange] = useState(NO_RANGE);
   const { data, loading, error, reload } = useFetch(
-    (s) => api.auditLogs({ entityType: entityType || undefined, search: query.trim() || undefined }, s),
-    [entityType, query]
+    (s) => api.auditLogs({ entityType: entityType || undefined, search: query.trim() || undefined, ...rangeParams(range) }, s),
+    [entityType, query, range.from, range.to]
   );
 
   if (!can("accounts.approve")) {
@@ -6911,6 +7138,7 @@ function AuditLogView({ can }) {
         </div>
         <SearchBar inline value={query} onChange={setQuery} placeholder="ابحث بالاسم أو نوع العملية..." />
       </div>
+      <DateRangeBar value={range} onChange={setRange} />
 
       {loading ? <Spinner />
        : error ? <ErrorState message={error} onRetry={reload} />
@@ -6964,6 +7192,14 @@ function Style() {
       .field-input:focus{outline:2px solid var(--orange);outline-offset:1px}
       select.field-input{cursor:pointer}
       .field-error{color:var(--orange-deep);font-size:12px;margin:-4px 0 12px}
+      .date-range-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin:0 0 14px;
+        padding:10px 12px;background:var(--paper-raised);border:1px solid var(--rule);border-radius:12px}
+      .drb-field{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft)}
+      .drb-field input{border:1px solid var(--rule);background:var(--paper);border-radius:8px;padding:6px 8px;
+        font-family:var(--font-display);font-size:13px;color:var(--ink)}
+      .drb-field input:focus{outline:2px solid var(--orange);outline-offset:1px}
+      .drb-chips{margin:0}
+      @media (max-width:640px){.date-range-bar{padding:8px}.drb-field{flex:1 1 140px}.drb-field input{flex:1;min-width:0}}
       .otp-row{display:flex;gap:10px;justify-content:center;margin-bottom:12px}
       .otp-box{width:48px;height:54px;text-align:center;border:1px solid var(--rule);background:var(--paper);
         border-radius:10px;font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--ink)}

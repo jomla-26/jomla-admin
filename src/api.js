@@ -172,8 +172,9 @@ export const api = {
   updateProductVariant: (id, body) => request(`/catalog/product-variants/${id}`, { method: "PATCH", body }),
   adjustVariantStock: (id, body) => request(`/catalog/product-variants/${id}/adjust-stock`, { method: "POST", body }),
   deleteProductVariant: (id) => request(`/catalog/product-variants/${id}`, { method: "DELETE" }),
-  productMovement: (id) => request(`/catalog/products/${id}/movement`),
-  salesReport: (period) => request("/catalog/products/me/report", { params: { period } }),
+  productMovement: (id, params) => request(`/catalog/products/${id}/movement`, { params }),
+  // from/to (اختياريان) يتغلّبان على period في الخادم
+  salesReport: (period, params) => request("/catalog/products/me/report", { params: { period, ...params } }),
   inventoryReport: (params) => request("/catalog/inventory-report", { params }),
   importProducts: (rows, supplierId) => request("/catalog/products/import", { method: "POST", body: { rows, supplierId } }),
   confirmNewImports: (rows, supplierId) => request("/catalog/products/import/confirm-new", { method: "POST", body: { rows, supplierId } }),
@@ -181,7 +182,7 @@ export const api = {
   stockVouchers: (params) => request("/catalog/stock-vouchers", { params }),
   stockVoucher: (id) => request(`/catalog/stock-vouchers/${id}`),
   addStockMovement: (productId, body) => request(`/catalog/products/${productId}/stock-movements`, { method: "POST", body }),
-  stockHistory: (productId) => request(`/catalog/products/${productId}/stock-movements`),
+  stockHistory: (productId, params) => request(`/catalog/products/${productId}/stock-movements`, { params }),
   stockMovements: (params) => request("/catalog/stock-movements", { params }),
 
   /* الطلبيات */
@@ -222,6 +223,10 @@ vouchers: (params) => request("/finance/vouchers", { params: { limit: FULL_LIST,
   createVoucher: (body) => request("/finance/vouchers", { method: "POST", body }),
   decideVoucher: (id, body) => request(`/finance/vouchers/${id}/decide`, { method: "POST", body }),
   transfers: (body) => request("/finance/transfers", { method: "POST", body }),
+  // قائمة التحويلات بين الخزائن (from/to) — قد لا يتوفر في الخادم (404)
+  transfersList: (params) => request("/finance/transfers", { params }),
+  // كشف حركة خزينة واحدة (from/to) — قد لا يتوفر في الخادم (404)
+  treasuryStatement: (code, params) => request(`/finance/treasuries/${encodeURIComponent(code)}/statement`, { params }),
   treasuries: () => request("/finance/treasuries"),
   // declaredAmount = 0 مسموح (المندوب ما سلّم شي) — لازم يوصل للخادم كـ 0 مش يُحذف
   settleDriver: (id, declaredAmount) => request(`/finance/drivers/${id}/settle`, { method: "POST", body: declaredAmount == null ? {} : { declaredAmount } }),
@@ -229,17 +234,18 @@ vouchers: (params) => request("/finance/vouchers", { params: { limit: FULL_LIST,
   giveDriverFloat: (id, body) => request(`/finance/drivers/${id}/float`, { method: "POST", body }),
   returnDriverFloat: (id, body) => request(`/finance/drivers/${id}/return-float`, { method: "POST", body }),
   driverWallet: (id) => request(`/finance/drivers/${id}/wallet`),
-  driverWalletTransactions: (id) => request(`/finance/drivers/${id}/wallet/transactions`),
+  driverWalletTransactions: (id, params) => request(`/finance/drivers/${id}/wallet/transactions`, { params }),
   employeeWallets: () => request("/finance/employees/wallets"),
   paySalary: (body) => request("/finance/salaries", { method: "POST", body }),
-  customerLedger: (id) => request(`/finance/ledger/customer/${id}`),
-  supplierLedger: (id) => request(`/finance/ledger/supplier/${id}`),
+  // from/to: مع from يرجّع الخادم أول صف "رصيد سابق" (is_opening)
+  customerLedger: (id, params) => request(`/finance/ledger/customer/${id}`, { params }),
+  supplierLedger: (id, params) => request(`/finance/ledger/supplier/${id}`, { params }),
   customerBalances: () => request("/finance/balances/customers", { params: { limit: FULL_LIST } }),
   supplierBalances: () => request("/finance/balances/suppliers", { params: { limit: FULL_LIST } }),
   voucherData: (id) => request(`/finance/vouchers/me/${id}`),
-  myVouchers: () => request("/finance/vouchers/mine", { params: { limit: FULL_LIST } }),
+  myVouchers: (params) => request("/finance/vouchers/mine", { params: { limit: FULL_LIST, ...params } }),
   expenses: (params) => request("/finance/expenses", { params }),
-  expensesSummary: () => request("/finance/expenses/summary"),
+  expensesSummary: (params) => request("/finance/expenses/summary", { params }),
   createExpense: (body) => request("/finance/expenses", { method: "POST", body }),
   profitReport: (params) => request("/finance/profit-report", { params }),
 
@@ -340,9 +346,9 @@ orderMessages: (orderId, orderSupplierId) => request(`/engagement/orders/${order
   createAsset: (body) => request("/assets", { method: "POST", body }),
   assetsSummary: () => request("/assets/summary"),
   addAssetRun: (id, body) => request(`/assets/${id}/runs`, { method: "POST", body }),
-  assetRuns: (id) => request(`/assets/${id}/runs`),
+  assetRuns: (id, params) => request(`/assets/${id}/runs`, { params }),
   addAssetTrip: (id, body) => request(`/assets/${id}/trips`, { method: "POST", body }),
-  assetTrips: (id) => request(`/assets/${id}/trips`),
+  assetTrips: (id, params) => request(`/assets/${id}/trips`, { params }),
   addAssetMaintenance: (id, body) => request(`/assets/${id}/maintenance`, { method: "POST", body }),
 
   /* أداء الموظفين */
@@ -354,10 +360,14 @@ orderMessages: (orderId, orderSupplierId) => request(`/engagement/orders/${order
   /* سلة العميل المحفوظة (للإدارة) + كشف بحث العملاء */
   customerCart: (id, signal) => request(`/carts/customer/${id}`, { signal }),
   clearCustomerCart: (id) => request(`/carts/customer/${id}`, { method: "DELETE" }),
-  searchLogAdmin: ({ days, onlyEmpty, q } = {}, signal) =>
+  // from/to (لو موجودين) يتغلّبون على days في الخادم
+  searchLogAdmin: ({ days, from, to, onlyEmpty, q } = {}, signal) =>
     request("/search-log/admin", {
       signal,
-      params: { days: days || 30, onlyEmpty: onlyEmpty ? 1 : 0, q: (q || "").trim() || undefined },
+      params: {
+        days: from || to ? undefined : (days || 30), from, to,
+        onlyEmpty: onlyEmpty ? 1 : 0, q: (q || "").trim() || undefined,
+      },
     }),
 
   /* البانرات الترويجية */
