@@ -301,6 +301,10 @@ vouchers: (params) => request("/finance/vouchers", { params: { limit: FULL_LIST,
   togglePriceRule: (id, isActive) => request(`/catalog/price-rules/${id}`, { method: "PATCH", body: { isActive } }),
 
   /* النواقص */
+  proposeShortage: (id, body) => request(`/orders/shortages/${id}/propose`, { method: "POST", body }),
+  systemErrors: (signal) => request("/system/errors", { signal }),
+  resolveSystemError: (id) => request(`/system/errors/${id}/resolve`, { method: "POST" }),
+  resolveAllSystemErrors: () => request("/system/errors/resolve-all", { method: "POST" }),
   restockShortage: (id, body) => request(`/orders/shortages/${id}/restock`, { method: "POST", body }),
   orderShortages: (orderId) => request(`/orders/${orderId}/shortages`),
   resolveShortageFull: (id, body) => request(`/orders/shortages/${id}/resolve`, { method: "POST", body }),

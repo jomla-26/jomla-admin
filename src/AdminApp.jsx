@@ -118,7 +118,7 @@ class ErrorBoundary extends React.Component {
 }
 
 /* ---- الرابط ↔ الشاشة: #/view?key=value ---- */
-const KNOWN_VIEWS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog",
+const KNOWN_VIEWS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog", "errorLog",
   "orderDetail", "customerLedger", "supplierLedger", "itemDetail", "supplierStockLog", "driverLedger"];
 const SUB_PARENT = { orderDetail: "orders", customerLedger: "reports", supplierLedger: "reports", itemDetail: "reports", supplierStockLog: "reports", driverLedger: "reports" };
 function parseHash(hash) {
@@ -200,6 +200,7 @@ function JomlaAdminAppInner() {
     const h = (e) => {
       const n = e.detail || {};
       if (n.order_id) setStack([{ view: "orders", sel: {} }, { view: "orderDetail", sel: { orderId: n.order_id } }]);
+      else if (String(n.title || "").includes("خطأ جديد في السيرفر")) setStack([{ view: "errorLog", sel: {} }]);
       else if (["account.new_registration", "supplier.decision"].includes(n.template_code)) setStack([{ view: "accounts", sel: {} }]);
     };
     window.addEventListener("jomla-notify-nav", h);
@@ -209,12 +210,12 @@ function JomlaAdminAppInner() {
   if (loading) return <Shell><Centered><Loader2 className="spin" size={26} /><p>جارٍ التحميل…</p></Centered></Shell>;
   if (!actor) return <Shell><LoginView onRequestOtp={requestOtp} onVerify={verifyOtp} /></Shell>;
 
-  const ROOTS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog"];
+  const ROOTS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog", "errorLog"];
   const TITLES = {
     dashboard: "نظرة عامة", orders: "الطلبيات", catalog: "إدارة الأصناف", accounts: "الحسابات",
     employees: "الموظفون والرواتب", delivery: "التوصيل والمندوبين",
     operations: "الأصول والمتابعة", settings: "الإعدادات", reports: "التقارير العامة",
-    auditLog: "سجل التدقيق",
+    auditLog: "سجل التدقيق", errorLog: "سجل الأخطاء",
     orderDetail: "تفاصيل الطلبية", customerLedger: "كشف حساب العميل",
     supplierLedger: "كشف حساب المورد", itemDetail: "بطاقة الصنف",
     supplierStockLog: "حركة أصناف المورد", driverLedger: "كشف حركة المندوب",
@@ -230,7 +231,7 @@ function JomlaAdminAppInner() {
   return (
     <Shell wide>
       <div className="app-shell">
-        <Sidebar view={view} roots={ROOTS} backTo={backTo} onNav={navRoot} onLogout={logout} />
+        <Sidebar can={can} view={view} roots={ROOTS} backTo={backTo} onNav={navRoot} onLogout={logout} />
         <div className="app-content">
           <header className="content-header">
             {!ROOTS.includes(view) && (
@@ -253,6 +254,7 @@ function JomlaAdminAppInner() {
             {view === "operations" && <OperationsView can={can} />}
             {view === "settings" && <SettingsView can={can} />}
             {view === "reports" && <ReportsView onGo={go} sel={sel} onPatch={patchSel} />}
+            {view === "errorLog" && <ErrorBoundary><ErrorLogView /></ErrorBoundary>}
             {view === "auditLog" && <ErrorBoundary><AuditLogView can={can} /></ErrorBoundary>}
             {view === "customerLedger" && <LedgerView kind="customer" id={sel.accountId} name={sel.partyName} />}
             {view === "supplierLedger" && <LedgerView kind="supplier" id={sel.accountId} name={sel.partyName} />}
@@ -561,7 +563,7 @@ function AdminNotificationBell() {
   );
 }
 
-function Sidebar({ view, roots, backTo, onNav, onLogout }) {
+function Sidebar({ can, view, roots, backTo, onNav, onLogout }) {
   const active = roots.includes(view) ? view : backTo[view] || "dashboard";
   const items = [
     { id: "dashboard", label: "الرئيسية", Icon: Home },
@@ -574,6 +576,7 @@ function Sidebar({ view, roots, backTo, onNav, onLogout }) {
     { id: "settings", label: "الإعدادات", Icon: Settings },
     { id: "reports", label: "التقارير", Icon: BarChart2 },
     { id: "auditLog", label: "سجل التدقيق", Icon: History },
+    ...(can?.("employees.manage") ? [{ id: "errorLog", label: "سجل الأخطاء", Icon: AlertTriangle }] : []),
   ];
   return (
     <aside className="sidebar">
@@ -1416,13 +1419,19 @@ function ShortagesPanel({ orderId, onResolved }) {
 const SHORTAGE_RESOLUTION_HELP = {
   reduce_qty: "نقبل بالكمية المتوفرة بس. الفاتورة تنقص للكمية المؤكدة ويتحسب الإجمالي من جديد، والمورد ينبّه بالتعديل.",
   cancel_item: "نشيل الصنف كله من الفاتورة، ونرجّع كميته للمخزون، والمورد ينبّه. لو كان آخر صنف في الطلبية تتلغى الطلبية.",
-  accept_substitute: "نضيف صنف بديل من نفس المورد بنفس الكمية الناقصة وبسعر البديل، ويدخل في الفاتورة ويتخصم من مخزونه، والمورد ينبّه يجهّزه.",
+  accept_substitute: "نضيف صنف بديل (من نفس المورد أو من مورد آخر) بنفس الكمية الناقصة وبسعر البديل. لو من مورد آخر يوصله إشعار ويؤكد توفره بنفسه.",
   wait: "العميل يوافق ينتظر لين يتوفر الصنف. الطلبية تبقى في حالة نقص والمورد ينبّه، وأول ما يتوفر تضغط «توفّر الصنف».",
 };
 
 function SubstitutePicker({ shortage: sh, productId, variantId, onChange }) {
-  const { data, loading, error } = useFetch((s) => api.products({ supplierId: sh.supplier_id }, s), [sh.supplier_id]);
-  if (loading) return <Spinner label="جارٍ تحميل أصناف المورد…" />;
+  const [other, setOther] = useState(false);
+  const [term, setTerm] = useState("");
+  const { data, loading, error } = useFetch(
+    (s) => (other
+      ? (term.trim().length >= 2 ? api.products({ search: term.trim() }, s) : Promise.resolve([]))
+      : api.products({ supplierId: sh.supplier_id }, s)),
+    [sh.supplier_id, other, term]
+  );
   if (error) return <p className="field-error">{error}</p>;
   const list = (data ?? []).filter((p) => p.is_active !== false && p.approval_status === "approved" && p.availability !== "suspended")
     .sort((a, b) => a.name.localeCompare(b.name, "ar"));
@@ -1430,12 +1439,18 @@ function SubstitutePicker({ shortage: sh, productId, variantId, onChange }) {
   const variants = chosen?.variants ?? [];
   return (
     <div style={{ marginTop: 10 }}>
-      <label className="field-label">اختر الصنف البديل (من أصناف {sh.supplier_name})</label>
+      <div className="avail-row" style={{ marginBottom: 8 }}>
+        <button className={"avail-btn" + (!other ? " avail-btn-active avail-btn-partial" : "")} onClick={() => { setOther(false); onChange("", ""); }}>من نفس المورد</button>
+        <button className={"avail-btn" + (other ? " avail-btn-active avail-btn-partial" : "")} onClick={() => { setOther(true); onChange("", ""); }}>من مورد آخر</button>
+      </div>
+      {other && <input className="field-input" placeholder="اكتب اسم الصنف أو المورد (حرفين على الأقل)" value={term} onChange={(e) => setTerm(e.target.value)} />}
+      {loading && <Spinner label="جارٍ التحميل…" />}
+      <label className="field-label">اختر الصنف البديل {other ? "(من أي مورد — يُبلَّغ مورده يؤكد توفره)" : `(من أصناف ${sh.supplier_name})`}</label>
       <select className="field-input" value={productId} onChange={(e) => onChange(e.target.value, "")}>
         <option value="">— اختر —</option>
         {list.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.name}{p.id === sh.product_id ? " (نفس الصنف — اختر خيارًا مختلفًا)" : ""} — {p.base_price != null ? `${Number(p.base_price).toFixed(2)} د.ل` : "حسب الخيار"} — متوفر {Number(p.stock_qty)}
+            {p.name}{other && p.supplier_name ? ` — ${p.supplier_name}` : ""}{p.id === sh.product_id ? " (نفس الصنف — اختر خيارًا مختلفًا)" : ""} — {p.base_price != null ? `${Number(p.base_price).toFixed(2)} د.ل` : "حسب الخيار"} — متوفر {Number(p.stock_qty)}
           </option>
         ))}
       </select>
@@ -1464,6 +1479,11 @@ function ShortageRow({ shortage: sh, onResolved }) {
     substituteVariantId: resolution === "accept_substitute" && subVariant ? subVariant : undefined,
   }));
   const restock = useAction(() => api.restockShortage(sh.id, { qty: Number(restockQty) }));
+  const propose = useAction(() => api.proposeShortage(sh.id, {
+    resolution,
+    substituteProductId: resolution === "accept_substitute" ? subProduct : undefined,
+    substituteVariantId: resolution === "accept_substitute" && subVariant ? subVariant : undefined,
+  }));
   const alreadyResolved = Boolean(sh.resolved_at);
   const waiting = !alreadyResolved && sh.resolution === "wait";
   const resolveBlocked = (resolution === "reduce_qty" && noneAvailable)
@@ -1516,11 +1536,22 @@ function ShortageRow({ shortage: sh, onResolved }) {
             <SubstitutePicker shortage={sh} productId={subProduct} variantId={subVariant}
               onChange={(p, v) => { setSubProduct(p); setSubVariant(v); }} />
           )}
-          <p className="hint">يفترض هذا أن العميل وافق على الحل هاتفيًا أو عبر الدردشة قبل التأكيد.</p>
+          {sh.proposed_resolution && (
+            <p className="note-inline">⏳ تم إرسال اقتراح للعميل: {SHORTAGE_RESOLUTION_LABELS[sh.proposed_resolution]} — بانتظار رده.</p>
+          )}
+          {sh.customer_response === "rejected" && !sh.proposed_resolution && (
+            <p className="field-error">العميل رفض الاقتراح السابق. اقترح حلًا آخر أو تواصل معه.</p>
+          )}
+          {propose.error && <p className="field-error">{propose.error}</p>}
           {resolve.error && <p className="field-error">{resolve.error}</p>}
+          <button className="invoice-action-btn" disabled={propose.pending || resolveBlocked}
+            onClick={() => propose.run().then(onResolved).catch(() => {})}>
+            <Check size={13} /> {propose.pending ? "جارٍ الإرسال…" : "إرسال الاقتراح للعميل (يوافق من تطبيقه)"}
+          </button>
+          <p className="hint">أو لو العميل وافق شفهيًا/بالدردشة، اعتمد بالنيابة عنه:</p>
           <button className="invoice-action-btn" disabled={resolve.pending || resolveBlocked}
             onClick={() => resolve.run().then(onResolved).catch(() => {})}>
-            <Check size={13} /> {resolve.pending ? "جارٍ التنفيذ…" : "تأكيد الحل"}
+            <Check size={13} /> {resolve.pending ? "جارٍ التنفيذ…" : "اعتماد بالنيابة عن العميل"}
           </button>
         </>
       )}
@@ -7448,6 +7479,40 @@ function TransferForm({ treasuries = [], onClose, onDone }) {
 /* --------------------------- الأنماط --------------------------- */
 
 /* --------------------------- سجل التدقيق --------------------------- */
+
+function ErrorLogView() {
+  const { data, loading, error, reload } = useFetch((s) => api.systemErrors(s), []);
+  const fix = useAction((id) => api.resolveSystemError(id));
+  const fixAll = useAction(() => api.resolveAllSystemErrors());
+  const [openId, setOpenId] = useState(null);
+  const items = data?.items ?? [];
+  if (loading) return <Spinner label="جارٍ التحميل…" />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  return (
+    <div className="screen">
+      <div className="toolbar-row">
+        <b>{items.length ? `أخطاء مفتوحة: ${data.open}` : "ما فيش أخطاء ✅"}</b>
+        {items.length > 0 && (
+          <button className="invoice-action-btn" disabled={fixAll.pending} onClick={() => fixAll.run().then(reload).catch(() => {})}>تم حلها كلها</button>
+        )}
+      </div>
+      <p className="hint">هنا تظهر أخطاء السيرفر (اللي يشوفها المستخدم كـ«حدث خطأ غير متوقع»). نفس الخطأ المتكرر يتجمّع في سطر واحد.</p>
+      {items.map((e) => (
+        <div key={e.id} className="invoice-block" style={{ marginBottom: 10 }}>
+          <div className="supplier-item-top">
+            <span className="invoice-line-name" dir="ltr">{e.method} {e.path}</span>
+            <span className="invoice-line-price">×{e.occurrences}</span>
+          </div>
+          <p className="hint">{e.message}</p>
+          <p className="hint">آخر مرة: {new Date(e.last_seen).toLocaleString("ar-LY")}{e.actor_name ? ` — ${e.actor_name}` : ""}</p>
+          <button className="invoice-action-btn" onClick={() => setOpenId(openId === e.id ? null : e.id)}>{openId === e.id ? "إخفاء التفاصيل" : "التفاصيل"}</button>{" "}
+          <button className="invoice-action-btn" disabled={fix.pending} onClick={() => fix.run(e.id).then(reload).catch(() => {})}>تم حلّه</button>
+          {openId === e.id && <pre dir="ltr" style={{ whiteSpace: "pre-wrap", fontSize: 11, marginTop: 8 }}>{e.stack}</pre>}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function AuditLogView({ can }) {
   const [entityType, setEntityType] = useState("");
