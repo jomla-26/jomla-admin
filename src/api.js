@@ -198,6 +198,8 @@ export const api = {
   setAvailability: (osId, body) =>
     request(`/orders/supplier-parts/${osId}/availability`, { method: "POST", body }),
   resolveShortage: (id, body) => request(`/orders/shortages/${id}/resolve`, { method: "POST", body }),
+  reassignDriver: (id, driverId, reason) =>
+    request(`/orders/${id}/reassign-driver`, { method: "POST", body: { driverId, reason: reason || undefined } }),
   assignDriver: (id, driverId) =>
     request(`/orders/${id}/assign-driver`, { method: "POST", body: { driverId } }),
   startDelivery: (id) => request(`/orders/${id}/start-delivery`, { method: "POST" }),

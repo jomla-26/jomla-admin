@@ -1648,6 +1648,8 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
   const reject = useAction((postpone) => api.rejectOrder(orderId, { reason, postpone }));
   const setStatus = useAction(() => api.setOrderStatus(orderId, { status: manualStatus }));
   const assign = useAction(() => api.assignDriver(orderId, driverId));
+  const [reassignReason, setReassignReason] = useState("");
+  const reassign = useAction(() => api.reassignDriver(orderId, driverId, reassignReason));
 
   useEffect(() => { if (order) setManualStatus(order.status); }, [order?.status]);
 
@@ -1946,6 +1948,24 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
                   onClick={() => assign.run().then(reload).catch(() => {})}>
                   <Truck size={16} style={{ verticalAlign: "-3px", marginLeft: 6 }} />
                   تسليم الطلبية للمندوب
+                </button>
+              </>
+            ) : ["assigned_to_driver", "out_for_delivery"].includes(order.status) && order.driver_id && can("orders.assign_driver") ? (
+              <>
+                <label className="field-label">سحب الطلبية من المندوب الحالي وإسنادها لمندوب آخر</label>
+                <select className="field-input" value={driverId} onChange={(e) => setDriverId(e.target.value)}>
+                  <option value="">— اختر المندوب الجديد —</option>
+                  {(drivers.data ?? []).filter((d) => d.driver_id !== order.driver_id).map((d) => (
+                    <option key={d.driver_id} value={d.driver_id}>{d.name}</option>
+                  ))}
+                </select>
+                <input className="field-input" placeholder="السبب (مثلاً: ظرف طارئ للمندوب)" value={reassignReason}
+                  onChange={(e) => setReassignReason(e.target.value)} />
+                {reassign.error && <p className="field-error">{reassign.error}</p>}
+                <button className="btn-primary" disabled={!driverId || reassign.pending}
+                  onClick={() => reassign.run().then(() => { setDriverId(""); setReassignReason(""); reload(); }).catch(() => {})}>
+                  <Truck size={16} style={{ verticalAlign: "-3px", marginLeft: 6 }} />
+                  {reassign.pending ? "جارٍ النقل…" : "سحب وإسناد لمندوب آخر"}
                 </button>
               </>
             ) : isFinal ? (
