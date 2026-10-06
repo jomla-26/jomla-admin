@@ -1649,6 +1649,7 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
   const setStatus = useAction(() => api.setOrderStatus(orderId, { status: manualStatus }));
   const assign = useAction(() => api.assignDriver(orderId, driverId));
   const [reassignReason, setReassignReason] = useState("");
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
   const reassign = useAction(() => api.reassignDriver(orderId, driverId, reassignReason));
 
   useEffect(() => { if (order) setManualStatus(order.status); }, [order?.status]);
@@ -1950,7 +1951,12 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
                   تسليم الطلبية للمندوب
                 </button>
               </>
-            ) : ["assigned_to_driver", "out_for_delivery"].includes(order.status) && order.driver_id && can("orders.assign_driver") ? (
+            ) : ["assigned_to_driver", "out_for_delivery"].includes(order.status) && order.driver_id && can("orders.reassign_driver") ? (
+              !emergencyOpen ? (
+                <button className="btn-ghost" onClick={() => setEmergencyOpen(true)}>
+                  🚨 طارئ — نقل الطلبية لمندوب آخر
+                </button>
+              ) : (
               <>
                 <label className="field-label">سحب الطلبية من المندوب الحالي وإسنادها لمندوب آخر</label>
                 <select className="field-input" value={driverId} onChange={(e) => setDriverId(e.target.value)}>
@@ -1963,11 +1969,13 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
                   onChange={(e) => setReassignReason(e.target.value)} />
                 {reassign.error && <p className="field-error">{reassign.error}</p>}
                 <button className="btn-primary" disabled={!driverId || reassign.pending}
-                  onClick={() => reassign.run().then(() => { setDriverId(""); setReassignReason(""); reload(); }).catch(() => {})}>
+                  onClick={() => reassign.run().then(() => { setDriverId(""); setReassignReason(""); setEmergencyOpen(false); reload(); }).catch(() => {})}>
                   <Truck size={16} style={{ verticalAlign: "-3px", marginLeft: 6 }} />
                   {reassign.pending ? "جارٍ النقل…" : "سحب وإسناد لمندوب آخر"}
                 </button>
+                <button className="btn-ghost" onClick={() => setEmergencyOpen(false)}>إلغاء</button>
               </>
+              )
             ) : isFinal ? (
               <div className="stamp">تمت معالجة هذه الطلبية</div>
             ) : null}
