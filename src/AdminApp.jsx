@@ -1253,6 +1253,81 @@ function OrderChatPanel({ orderId, orderSupplierId, placeholder }) {
   );
 }
 
+/* شكاوي المندوب (تكت يفتحها المندوب على الطلبية، مثلًا "الطلبية ما توصلتش") — قسم مستقل في سجل الطلبية */
+const DRIVER_COMPLAINT_KINDS = {
+  not_delivered: "الطلبية ما توصلتش للعميل",
+  customer_unreachable: "العميل ما يردش على الهاتف",
+  wrong_address: "العنوان غير صحيح أو ما نلقاهوش",
+  customer_refused: "العميل رفض الاستلام",
+  supplier_issue: "مشكلة عند المورد (تأخير أو نقص)",
+  other: "أخرى",
+};
+
+function DriverComplaintRow({ complaint: c, canClose, onChanged }) {
+  const [closing, setClosing] = useState(false);
+  const [note, setNote] = useState("");
+  const close = useAction(() => api.closeDriverComplaint(c.id, { note: note.trim() || undefined }));
+  const isOpen = c.status === "open";
+
+  return (
+    <div className="supplier-item-row">
+      <div className="supplier-item-top">
+        <span className="invoice-line-name">{DRIVER_COMPLAINT_KINDS[c.kind] || c.kind}</span>
+        <span className={"status-pill" + (isOpen ? "" : " status-pill-done")}>{isOpen ? "مفتوحة" : "مقفلة"}</span>
+      </div>
+      <span className="supplier-item-qty">
+        المندوب: {c.driver_name || "—"} · <span dir="ltr">{fmtDateTime(c.created_at)}</span>
+      </span>
+      {c.note && <p className="hint" style={{ color: "var(--ink)" }}>{c.note}</p>}
+      {!isOpen && (
+        <p className="hint">
+          أُقفلت <span dir="ltr">{fmtDateTime(c.closed_at)}</span>{c.admin_note ? ` — ${c.admin_note}` : ""}
+        </p>
+      )}
+      {isOpen && canClose && (closing ? (
+        <div style={{ marginTop: 8 }}>
+          <input className="field-input" placeholder="ملاحظة الإدارة (اختياري): شن تم بخصوص الشكوى؟"
+            value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
+          {close.error && <p className="field-error">{close.error}</p>}
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button className="invoice-action-btn" disabled={close.pending}
+              onClick={() => close.run().then(onChanged).catch(() => {})}>
+              <Check size={13} /> تأكيد الإقفال
+            </button>
+            <button className="invoice-action-btn" onClick={() => setClosing(false)}>تراجع</button>
+          </div>
+        </div>
+      ) : (
+        <button className="invoice-action-btn" style={{ marginTop: 8 }} onClick={() => setClosing(true)}>
+          <Check size={13} /> إقفال الشكوى
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DriverComplaintsPanel({ orderId, hasDriver, canClose }) {
+  const { data, loading, error, reload } = useFetch(() => api.driverComplaints(orderId), [orderId]);
+  if (loading) return null;
+  if (error) return null; // قسم اختياري: فشله ما يعطّل شاشة الطلبية
+  if (!data?.length && !hasDriver) return null;
+
+  return (
+    <>
+      <h2 className="subsection-heading">
+        شكاوي المندوب{data?.some((c) => c.status === "open") ? ` (${data.filter((c) => c.status === "open").length} مفتوحة)` : ""}
+      </h2>
+      {!data?.length ? (
+        <p className="hint">ما فيش شكاوي من المندوب على هذه الطلبية.</p>
+      ) : (
+        <div className="invoice-block" style={{ marginBottom: 16 }}>
+          {data.map((c) => <DriverComplaintRow key={c.id} complaint={c} canClose={canClose} onChanged={reload} />)}
+        </div>
+      )}
+    </>
+  );
+}
+
 const SHORTAGE_RESOLUTION_LABELS = {
   reduce_qty: "إنقاص الكمية", cancel_item: "إلغاء الصنف",
   accept_substitute: "قبول بديل", wait: "الانتظار",
@@ -1610,6 +1685,8 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
               <ShortagesPanel orderId={order.id} onResolved={reload} />
             </>
           )}
+
+          <DriverComplaintsPanel orderId={order.id} hasDriver={Boolean(order.driver_id)} canClose={can("orders.review")} />
 
           <h2 className="subsection-heading">سجل حالة الطلبية</h2>
           <table className="data-table">
