@@ -195,6 +195,17 @@ function JomlaAdminAppInner() {
   // تنقّل من القائمة الجانبية: بداية جديدة من قسم رئيسي، يصفّر المكدّس
   const navRoot = (v) => setStack([{ view: v, sel: {} }]);
 
+  // الضغط على إشعار يفتح الطلبية (أو الشاشة) المعنية
+  useEffect(() => {
+    const h = (e) => {
+      const n = e.detail || {};
+      if (n.order_id) setStack([{ view: "orders", sel: {} }, { view: "orderDetail", sel: { orderId: n.order_id } }]);
+      else if (["account.new_registration", "supplier.decision"].includes(n.template_code)) setStack([{ view: "accounts", sel: {} }]);
+    };
+    window.addEventListener("jomla-notify-nav", h);
+    return () => window.removeEventListener("jomla-notify-nav", h);
+  }, []);
+
   if (loading) return <Shell><Centered><Loader2 className="spin" size={26} /><p>جارٍ التحميل…</p></Centered></Shell>;
   if (!actor) return <Shell><LoginView onRequestOtp={requestOtp} onVerify={verifyOtp} /></Shell>;
 
@@ -511,6 +522,12 @@ function AdminNotificationBell() {
   function markAll() {
     api.markAllNotificationsRead().then(reload).catch(() => {});
   }
+  // الضغط على الإشعار: نعلّمه مقروء ونقفل القائمة ونفتح المكان المعني (طلبية/قسم/شاشة) عبر حدث يلتقطه التطبيق
+  function openNotification(n) {
+    markRead(n);
+    setOpen(false);
+    window.dispatchEvent(new CustomEvent("jomla-notify-nav", { detail: n }));
+  }
 
   return (
     <div style={{ position: "relative" }}>
@@ -530,7 +547,7 @@ function AdminNotificationBell() {
             <div className="notif-list">
               {data.notifications.map((n) => (
                 <div key={n.id} className={"notif-row" + (!n.in_app_read_at ? " notif-row-unread" : "")}
-                  onClick={() => markRead(n)}>
+                  onClick={() => openNotification(n)} style={{ cursor: "pointer" }}>
                   <span className="notif-title">{n.title}</span>
                   <span className="notif-body">{n.body}</span>
                   <span className="notif-time">{new Date(n.created_at).toLocaleString("ar")}</span>
@@ -3304,6 +3321,9 @@ function CatalogManagerView({ can }) {
         <div className="chip-row" style={{ marginBottom: 12 }}>
           <button className={"chip" + (tab === "all" ? " chip-active" : "")} onClick={() => setTab("all")}>كل الأصناف</button>
           {canManage && (
+            <button className={"chip" + (tab === "import" ? " chip-active" : "")} onClick={() => setTab("import")}>استيراد من إكسل</button>
+          )}
+          {canManage && (
             <button className={"chip" + (tab === "searches" ? " chip-active" : "")} onClick={() => setTab("searches")}>كشف البحث</button>
           )}
           {canApprove && <button className={"chip" + (tab === "pending" ? " chip-active" : "")} onClick={() => setTab("pending")}
@@ -3314,9 +3334,58 @@ function CatalogManagerView({ can }) {
       )}
       {tab === "pending" && canApprove
         ? <PendingProductsSettings onChanged={pending.reload} />
+        : tab === "import" && canManage
+        ? <CatalogExcelImportTab onImported={pending.reload} />
         : tab === "searches" && canManage
         ? <SearchLogView />
         : <CatalogProductsPane can={can} onChanged={pending.reload} />}
+    </div>
+  );
+}
+
+/* استيراد أصناف من إكسل لمورد تختاره — نفس آلية استيراد المورد بالظبط (مطابقة برقم الصنف عند المورد) */
+function CatalogExcelImportTab({ onImported }) {
+  const [supplierId, setSupplierId] = useState("");
+  const [started, setStarted] = useState(false);
+  const suppliers = useFetch((s) => api.accounts("supplier", { status: "approved", limit: 1000 }, s), []);
+  const sections = useFetch((s) => api.sections({ flat: 1 }, s), []);
+
+  if (started && supplierId) {
+    const name = (suppliers.data ?? []).find((x) => x.id === supplierId)?.business_name;
+    return (
+      <div>
+        <p className="hint">الاستيراد للمورد: <b>{name}</b></p>
+        <AdminImportProductsView key={supplierId} supplierId={supplierId} sections={sections.data ?? []}
+          onClose={() => setStarted(false)}
+          onImported={() => { setStarted(false); onImported && onImported(); }} />
+      </div>
+    );
+  }
+  return (
+    <div className="detail-card" style={{ maxWidth: 640 }}>
+      <h2 className="subsection-heading">استيراد أصناف من إكسل</h2>
+      <p className="hint">اختر المورد اللي الأصناف تابعة له، وبعدها ارفع ملف الإكسل. الصنف الموجود (برقم الصنف عند المورد) يتحدّث، والجديد يطلب تأكيدك قبل ما ينضاف.</p>
+      <label className="field-label">المورد</label>
+      {suppliers.loading ? <Spinner /> : suppliers.error ? <ErrorState message={suppliers.error} onRetry={suppliers.reload} /> : (
+        <select className="field-input" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+          <option value="">— اختر مورد —</option>
+          {(suppliers.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.business_name}</option>)}
+        </select>
+      )}
+      <button className="btn-primary" disabled={!supplierId} onClick={() => setStarted(true)}>متابعة</button>
+      <div style={{ marginTop: 14 }}>
+        <button className="btn-ghost" onClick={async () => {
+          const XLSX = await import("xlsx");
+          const ws = XLSX.utils.aoa_to_sheet([
+            ["القسم", "اسم الصنف", "وحدة البيع", "السعر (د.ل)", "الكمية المتوفرة", "رقم الصنف عندك (إجباري)"],
+            ["بقالة", "مثال: رز بسمتي 5 كيلو", "كرتونة", 120, 50, "RICE-001"],
+          ]);
+          ws["!cols"] = [{ wch: 16 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 24 }];
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "الأصناف");
+          XLSX.writeFile(wb, "نموذج-استيراد-الأصناف.xlsx");
+        }}>⬇️ تحميل نموذج إكسل فارغ</button>
+      </div>
     </div>
   );
 }
@@ -6204,7 +6273,8 @@ function openLedgerStatement({ title, partyName, rows, balanceLabel, period, col
   const totalDebit = rows.reduce((s, r) => s + (r.is_opening ? 0 : Number(r.debit || 0)), 0);
   const totalCredit = rows.reduce((s, r) => s + (r.is_opening ? 0 : Number(r.credit || 0)), 0);
   let n = 0;
-  const body = rows.map((r) => `<tr${r.is_opening ? ' style="background:#fff1e8;font-weight:700"' : ""}><td>${r.is_opening ? "—" : ++n}</td><td>${d(r)}</td><td>${esc(r.label)}</td><td>${esc(r.reference || "—")}</td>
+  const showRef = rows.some((r) => r.reference); // عمود "الفاتورة" يختفي لو الكشف ما فيه فواتير (مثل كشف المندوب)
+  const body = rows.map((r) => `<tr${r.is_opening ? ' style="background:#fff1e8;font-weight:700"' : ""}><td>${r.is_opening ? "—" : ++n}</td><td>${d(r)}</td><td>${esc(r.label)}</td>${showRef ? `<td>${esc(r.reference || "—")}</td>` : ""}
     <td>${esc(r.voucher_number || "—")}</td><td>${Number(r.debit) > 0 ? Number(r.debit).toFixed(2) : "—"}</td>
     <td>${Number(r.credit) > 0 ? Number(r.credit).toFixed(2) : "—"}</td><td>${Math.abs(Number(r.balance)).toFixed(2)}</td></tr>`).join("");
   w.document.open();
@@ -6226,8 +6296,8 @@ th{background:#181d2a;color:#fff;font-family:'Cairo',sans-serif}
 <div class="sheet"><img src="${LOGO_FULL}" alt="${COMPANY.name}" style="height:44px;display:block;margin-bottom:10px"/>
 <h2>${esc(title)}</h2><div class="meta">${esc(partyName)} · ${COMPANY.name} · ${new Date().toISOString().slice(0, 10)}</div>
 <div class="meta" style="color:#181d2a;font-weight:700">الفترة: ${esc(period || "كل الفترات")}</div>
-<table><thead><tr><th>#</th><th>التاريخ</th><th>البيان</th><th>الفاتورة</th><th>الإيصال</th><th>${colLabels[0]}</th><th>${colLabels[1]}</th><th>الرصيد</th></tr></thead>
-<tbody>${body || '<tr><td colspan="8">لا توجد حركة</td></tr>'}</tbody></table>
+<table><thead><tr><th>#</th><th>التاريخ</th><th>البيان</th>${showRef ? "<th>الفاتورة</th>" : ""}<th>الإيصال</th><th>${colLabels[0]}</th><th>${colLabels[1]}</th><th>الرصيد</th></tr></thead>
+<tbody>${body || `<tr><td colspan="${showRef ? 8 : 7}">لا توجد حركة</td></tr>`}</tbody></table>
 <div class="sum"><div>إجمالي ${colLabels[0]}: ${totalDebit.toFixed(2)} د.ل</div><div>إجمالي ${colLabels[1]}: ${totalCredit.toFixed(2)} د.ل</div><div>${esc(balanceLabel)}</div></div>
 </div></body></html>`);
   w.document.close();
@@ -7280,6 +7350,15 @@ function DriverLedgerView({ id, name }) {
       </div>
 
       <h2 className="subsection-heading">حركة العهدة</h2>
+      <button className="btn-ghost" style={{ marginBottom: 10 }}
+        onClick={() => openLedgerStatement({
+          title: "كشف حركة عهدة مندوب", partyName: name, colLabels: ["وارد", "صادر"],
+          rows: rows.map((r) => ({
+            entry_date: r.entry_date, label: r.label, reference: "", voucher_number: r.voucher_number,
+            debit: r.in_amount, credit: r.out_amount, balance: r.balance, is_opening: r.is_opening,
+          })),
+          balanceLabel: `الرصيد الحالي: ${money(w.balance)}`, period: rangeLabel(range),
+        })}>🖨️ طباعة / PDF لكشف الحركة</button>
       <table className="data-table">
         <thead><tr><th>التاريخ</th><th>البيان</th><th>رقم الإيصال</th>
           <th>وارد</th><th>صادر</th><th>الرصيد</th></tr></thead>
