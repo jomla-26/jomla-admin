@@ -1396,35 +1396,114 @@ function ShortagesPanel({ orderId, onResolved }) {
   );
 }
 
+const SHORTAGE_RESOLUTION_HELP = {
+  reduce_qty: "نقبل بالكمية المتوفرة بس. الفاتورة تنقص للكمية المؤكدة ويتحسب الإجمالي من جديد، والمورد ينبّه بالتعديل.",
+  cancel_item: "نشيل الصنف كله من الفاتورة، ونرجّع كميته للمخزون، والمورد ينبّه. لو كان آخر صنف في الطلبية تتلغى الطلبية.",
+  accept_substitute: "نضيف صنف بديل من نفس المورد بنفس الكمية الناقصة وبسعر البديل، ويدخل في الفاتورة ويتخصم من مخزونه، والمورد ينبّه يجهّزه.",
+  wait: "العميل يوافق ينتظر لين يتوفر الصنف. الطلبية تبقى في حالة نقص والمورد ينبّه، وأول ما يتوفر تضغط «توفّر الصنف».",
+};
+
+function SubstitutePicker({ shortage: sh, productId, variantId, onChange }) {
+  const { data, loading, error } = useFetch((s) => api.products({ supplierId: sh.supplier_id }, s), [sh.supplier_id]);
+  if (loading) return <Spinner label="جارٍ تحميل أصناف المورد…" />;
+  if (error) return <p className="field-error">{error}</p>;
+  const list = (data ?? []).filter((p) => p.is_active !== false && p.approval_status === "approved" && p.availability !== "suspended")
+    .sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  const chosen = list.find((p) => p.id === productId);
+  const variants = chosen?.variants ?? [];
+  return (
+    <div style={{ marginTop: 10 }}>
+      <label className="field-label">اختر الصنف البديل (من أصناف {sh.supplier_name})</label>
+      <select className="field-input" value={productId} onChange={(e) => onChange(e.target.value, "")}>
+        <option value="">— اختر —</option>
+        {list.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}{p.id === sh.product_id ? " (نفس الصنف — اختر خيارًا مختلفًا)" : ""} — {p.base_price != null ? `${Number(p.base_price).toFixed(2)} د.ل` : "حسب الخيار"} — متوفر {Number(p.stock_qty)}
+          </option>
+        ))}
+      </select>
+      {variants.length > 0 && (
+        <select className="field-input" value={variantId} onChange={(e) => onChange(productId, e.target.value)}>
+          <option value="">— اختر الخيار —</option>
+          {variants.map((v) => (
+            <option key={v.id} value={v.id}>{v.label} — {Number(v.price).toFixed(2)} د.ل — متوفر {Number(v.stockQty)}</option>
+          ))}
+        </select>
+      )}
+      {chosen && <p className="hint">الكمية اللي تنضاف: {Number(sh.qty_missing)} {sh.unit}</p>}
+    </div>
+  );
+}
+
 function ShortageRow({ shortage: sh, onResolved }) {
-  const [resolution, setResolution] = useState("reduce_qty");
-  const resolve = useAction(() => api.resolveShortageFull(sh.id, { resolution, customerApproved: true }));
+  const noneAvailable = Number(sh.qty_confirmed || 0) <= 0;
+  const [resolution, setResolution] = useState(noneAvailable ? "cancel_item" : "reduce_qty");
+  const [subProduct, setSubProduct] = useState("");
+  const [subVariant, setSubVariant] = useState("");
+  const [restockQty, setRestockQty] = useState(String(Number(sh.qty_missing)));
+  const resolve = useAction(() => api.resolveShortageFull(sh.id, {
+    resolution, customerApproved: true,
+    substituteProductId: resolution === "accept_substitute" ? subProduct : undefined,
+    substituteVariantId: resolution === "accept_substitute" && subVariant ? subVariant : undefined,
+  }));
+  const restock = useAction(() => api.restockShortage(sh.id, { qty: Number(restockQty) }));
   const alreadyResolved = Boolean(sh.resolved_at);
+  const waiting = !alreadyResolved && sh.resolution === "wait";
+  const resolveBlocked = (resolution === "reduce_qty" && noneAvailable)
+    || (resolution === "accept_substitute" && !subProduct)
+    || (resolution === "wait" && waiting);
 
   return (
     <div className="supplier-item-row">
       <div className="supplier-item-top">
         <span className="invoice-line-name">{sh.product_name} <i>({sh.unit})</i></span>
-        <span className="invoice-line-price">ناقص {sh.qty_missing} من {sh.qty_requested}</span>
+        <span className="invoice-line-price">ناقص {Number(sh.qty_missing)} من {Number(sh.qty_requested)}</span>
       </div>
-      <span className="supplier-item-qty">المورد: {sh.supplier_name}</span>
+      <span className="supplier-item-qty">المورد: {sh.supplier_name} — المتوفر عنده: {Number(sh.qty_confirmed || 0)}</span>
 
       {alreadyResolved ? (
-        <p className="hint">تم الحل: {SHORTAGE_RESOLUTION_LABELS[sh.resolution] || sh.resolution}</p>
+        <p className="hint">
+          تم الحل: {SHORTAGE_RESOLUTION_LABELS[sh.resolution] || sh.resolution}
+          {sh.resolution === "accept_substitute" && sh.substitute_name ? ` — البديل: ${sh.substitute_name}` : ""}
+        </p>
       ) : (
         <>
+          {waiting && (
+            <div className="note-inline" style={{ marginTop: 10 }}>
+              <b>⏳ بانتظار توفر الصنف</b> (العميل وافق ينتظر). لما المورد يبلغك إنه توفر، اكتب الكمية الواصلة واضغط «توفّر الصنف»:
+              <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+                <input className="field-input" style={{ maxWidth: 120 }} type="number" min="0" step="any" value={restockQty}
+                  onChange={(e) => setRestockQty(e.target.value)} dir="ltr" />
+                <button className="invoice-action-btn" disabled={restock.pending || !(Number(restockQty) > 0)}
+                  onClick={() => restock.run().then(onResolved).catch(() => {})}>
+                  <Check size={13} /> {restock.pending ? "جارٍ التأكيد…" : "توفّر الصنف"}
+                </button>
+              </div>
+              {restock.error && <p className="field-error">{restock.error}</p>}
+              <p className="hint">أو اختر حلاً آخر من الأسفل لو العميل غيّر رأيه.</p>
+            </div>
+          )}
           <div className="avail-row" style={{ marginTop: 10 }}>
             {Object.entries(SHORTAGE_RESOLUTION_LABELS).map(([k, l]) => (
               <button key={k} className={"avail-btn" + (resolution === k ? " avail-btn-active avail-btn-partial" : "")}
                 aria-pressed={resolution === k}
+                disabled={k === "wait" && waiting}
                 onClick={() => setResolution(k)}>{resolution === k ? "✓ " : ""}{l}</button>
             ))}
           </div>
+          <p className="hint">{SHORTAGE_RESOLUTION_HELP[resolution]}</p>
+          {resolution === "reduce_qty" && noneAvailable && (
+            <p className="field-error">المورد عنده صفر من هذا الصنف، ما فيش كمية نقبلها. اختر إلغاء الصنف أو بديل أو الانتظار.</p>
+          )}
+          {resolution === "accept_substitute" && (
+            <SubstitutePicker shortage={sh} productId={subProduct} variantId={subVariant}
+              onChange={(p, v) => { setSubProduct(p); setSubVariant(v); }} />
+          )}
           <p className="hint">يفترض هذا أن العميل وافق على الحل هاتفيًا أو عبر الدردشة قبل التأكيد.</p>
           {resolve.error && <p className="field-error">{resolve.error}</p>}
-          <button className="invoice-action-btn" disabled={resolve.pending}
+          <button className="invoice-action-btn" disabled={resolve.pending || resolveBlocked}
             onClick={() => resolve.run().then(onResolved).catch(() => {})}>
-            <Check size={13} /> تأكيد الحل
+            <Check size={13} /> {resolve.pending ? "جارٍ التنفيذ…" : "تأكيد الحل"}
           </button>
         </>
       )}
