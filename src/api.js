@@ -194,6 +194,7 @@ export const api = {
   setRemainingCollector: (id, supplierId) =>
     request(`/orders/${id}/remaining-collector`, { method: "POST", body: { supplierId } }),
   rejectOrder: (id, body) => request(`/orders/${id}/reject`, { method: "POST", body }),
+  addOrderNote: (id, note) => request(`/orders/${id}/notes`, { method: "POST", body: { note } }),
   setOrderStatus: (id, body) => request(`/orders/${id}/status`, { method: "PATCH", body }),
   setAvailability: (osId, body) =>
     request(`/orders/supplier-parts/${osId}/availability`, { method: "POST", body }),

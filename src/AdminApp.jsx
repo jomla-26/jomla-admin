@@ -1646,7 +1646,10 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
   const [feeValue, setFeeValue] = useState("");
   const updateFee = useAction(() => api.updateDeliveryFee(orderId, { deliveryFee: Number(feeValue) }));
   const reject = useAction((postpone) => api.rejectOrder(orderId, { reason, postpone }));
-  const setStatus = useAction(() => api.setOrderStatus(orderId, { status: manualStatus }));
+  const setStatus = useAction(() => api.setOrderStatus(orderId, { status: manualStatus, note: statusNote.trim() || undefined }));
+  const [statusNote, setStatusNote] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const addNote = useAction(() => api.addOrderNote(orderId, newNote));
   const assign = useAction(() => api.assignDriver(orderId, driverId));
   const [reassignReason, setReassignReason] = useState("");
   const [emergencyOpen, setEmergencyOpen] = useState(false);
@@ -1747,13 +1750,24 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
                 <tr key={i}>
                   <td className="cell-muted" style={{ whiteSpace: "nowrap" }} dir="ltr">{fmtDateTime(h.changed_at)}</td>
                   <td className="cell-muted">{h.from_status ? statusLabel(h.from_status) : "—"}</td>
-                  <td>{statusLabel(h.to_status)}</td>
+                  <td>{h.from_status && h.from_status === h.to_status ? <em className="tag tag-muted">ملاحظة</em> : statusLabel(h.to_status)}</td>
                   <td className="cell-muted">{h.changed_by_name}</td>
                   <td className="cell-muted">{h.note || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {(can("orders.review") || can("orders.cancel") || can("orders.assign_driver") || can("orders.returns")) && (
+            <div style={{ marginTop: 10 }}>
+              <textarea className="field-input" rows={2} placeholder="اكتب ملاحظة في سجل الطلبية (تظهر باسمك ووقتها)"
+                value={newNote} onChange={(e) => setNewNote(e.target.value)} />
+              {addNote.error && <p className="field-error">{addNote.error}</p>}
+              <button className="btn-ghost" disabled={!newNote.trim() || addNote.pending}
+                onClick={() => addNote.run().then(() => { setNewNote(""); reload(); }).catch(() => {})}>
+                {addNote.pending ? "جارٍ الحفظ…" : "إضافة الملاحظة"}
+              </button>
+            </div>
+          )}
 
           {/* دردشتان منفصلتان: العميل لوحده، وكل مورد لوحده (محادثة المورد خاصة بينه وبين الإدارة فقط) */}
           <h2 className="subsection-heading">دردشة وشكاوي العميل</h2>
@@ -1993,8 +2007,14 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
                 <select className="field-input" value={manualStatus} onChange={(e) => setManualStatus(e.target.value)}>
                   {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
-                <button className="btn-ghost" disabled={manualStatus === order.status || setStatus.pending}
-                  onClick={() => setStatus.run().then(reload).catch(() => {})}>
+                {["cancelled", "postponed"].includes(manualStatus) && manualStatus !== order.status && (
+                  <input className="field-input" placeholder={manualStatus === "cancelled" ? "سبب الإلغاء (مطلوب)" : "سبب التأجيل (مطلوب)"}
+                    value={statusNote} onChange={(e) => setStatusNote(e.target.value)} />
+                )}
+                <button className="btn-ghost"
+                  disabled={manualStatus === order.status || setStatus.pending ||
+                    (["cancelled", "postponed"].includes(manualStatus) && statusNote.trim().length < 3)}
+                  onClick={() => setStatus.run().then(() => { setStatusNote(""); reload(); }).catch(() => {})}>
                   {setStatus.pending ? "جارٍ التحديث…" : "تحديث حالة الطلبية"}
                 </button>
               </div>
