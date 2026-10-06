@@ -1239,7 +1239,7 @@ function OrderChatPanel({ orderId, orderSupplierId, placeholder }) {
          : data.map((m, i) => (
             <div className={"chat-bubble " + (m.sender_type === "employee" ? "chat-bubble-user" : "chat-bubble-support")} key={i}>
               <span>{m.body}</span>
-              <span className="chat-time">{m.sender_name} · {new Date(m.created_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}</span>
+              <span className="chat-time">{m.sender_name} · {fmtDateTime(m.created_at)}</span>
             </div>
           ))}
       </div>
@@ -1613,11 +1613,11 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
 
           <h2 className="subsection-heading">سجل حالة الطلبية</h2>
           <table className="data-table">
-            <thead><tr><th>التاريخ</th><th>من</th><th>إلى</th><th>بواسطة</th><th>ملاحظة</th></tr></thead>
+            <thead><tr><th>التاريخ والوقت</th><th>من</th><th>إلى</th><th>بواسطة</th><th>ملاحظة</th></tr></thead>
             <tbody>
               {order.history.map((h, i) => (
                 <tr key={i}>
-                  <td className="cell-muted">{day(h.changed_at)}</td>
+                  <td className="cell-muted" style={{ whiteSpace: "nowrap" }} dir="ltr">{fmtDateTime(h.changed_at)}</td>
                   <td className="cell-muted">{h.from_status ? statusLabel(h.from_status) : "—"}</td>
                   <td>{statusLabel(h.to_status)}</td>
                   <td className="cell-muted">{h.changed_by_name}</td>
@@ -1627,8 +1627,17 @@ const changeFulfillment = useAction(() => api.changeFulfillment(orderId, {
             </tbody>
           </table>
 
-          <h2 className="subsection-heading">الدردشة مع العميل</h2>
+          {/* دردشتان منفصلتان: العميل لوحده، وكل مورد لوحده (محادثة المورد خاصة بينه وبين الإدارة فقط) */}
+          <h2 className="subsection-heading">دردشة وشكاوي العميل</h2>
           <OrderChatPanel orderId={order.id} placeholder="اكتب ردًا للعميل..." />
+
+          {order.suppliers.map((s) => (
+            <div key={s.id}>
+              <h2 className="subsection-heading">دردشة وشكاوي المورد: {s.supplier_name}</h2>
+              <OrderChatPanel orderId={order.id} orderSupplierId={s.id}
+                placeholder={`اكتب رسالة للمورد ${s.supplier_name}...`} />
+            </div>
+          ))}
         </div>
 
         <aside className="detail-aside">
