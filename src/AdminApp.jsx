@@ -117,13 +117,61 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* ---- الرابط ↔ الشاشة: #/view?key=value ---- */
+const KNOWN_VIEWS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog",
+  "orderDetail", "customerLedger", "supplierLedger", "itemDetail", "supplierStockLog", "driverLedger"];
+const SUB_PARENT = { orderDetail: "orders", customerLedger: "reports", supplierLedger: "reports", itemDetail: "reports", supplierStockLog: "reports", driverLedger: "reports" };
+function parseHash(hash) {
+  const m = /^#\/([A-Za-z]+)(?:\?(.*))?$/.exec(hash || "");
+  const view = m && KNOWN_VIEWS.includes(m[1]) ? m[1] : "dashboard";
+  const sel = {};
+  if (m && m[2]) {
+    for (const [k, v] of new URLSearchParams(m[2])) sel[k] = v;
+  }
+  return { view, sel };
+}
+function hashFromEntry(e) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(e.sel || {})) {
+    if (v !== undefined && v !== null && v !== "" && ["string", "number", "boolean"].includes(typeof v)) p.set(k, String(v));
+  }
+  const q = p.toString();
+  return "#/" + e.view + (q ? "?" + q : "");
+}
+function stackFromHash() {
+  const { view, sel } = parseHash(typeof window !== "undefined" ? window.location.hash : "");
+  const parent = SUB_PARENT[view];
+  return parent ? [{ view: parent, sel: {} }, { view, sel }] : [{ view, sel }];
+}
+
 function JomlaAdminAppInner() {
   const { actor, loading, requestOtp, verifyOtp, logout, can } = useSession("employee");
   // مكدّس تنقّل كامل (زي تاريخ المتصفح) بدل خريطة "رجوع" ثابتة — كل عنصر فيه
   // شاشة (view) + بيانات مختارة (sel) في تلك اللحظة بالضبط، عشان سهم الرجوع
   // يرجّعك لنفس الشاشة والتبويب اللي كنت فيه، مش يبدأ من الأول دايمًا
-  const [stack, setStack] = useState([{ view: "dashboard", sel: {} }]);
+  const [stack, setStack] = useState(() => stackFromHash());
   const { view, sel } = stack[stack.length - 1];
+
+  // مزامنة الرابط (#/orders ...) مع الشاشة الحالية: كل صفحة لها رابط خاص،
+  // والريفرش أو زر الرجوع بالمتصفح يرجّعك لنفس الصفحة
+  useEffect(() => {
+    const h = hashFromEntry(stack[stack.length - 1]);
+    if (window.location.hash === h || (h === "#/dashboard" && !window.location.hash)) return;
+    try {
+      const prevView = parseHash(window.location.hash).view;
+      const url = window.location.pathname + window.location.search + h;
+      if (prevView !== stack[stack.length - 1].view) window.history.pushState(null, "", url);
+      else window.history.replaceState(null, "", url);
+    } catch { /* ignore */ }
+  }, [stack]);
+  useEffect(() => {
+    const onHash = () => {
+      setStack((s) => (hashFromEntry(s[s.length - 1]) === window.location.hash ? s : stackFromHash()));
+    };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("popstate", onHash);
+    return () => { window.removeEventListener("hashchange", onHash); window.removeEventListener("popstate", onHash); };
+  }, []);
 
   // يدخل شاشة جديدة فوق المكدّس (يحافظ على اللي قبلها عشان الرجوع)
   const go = (v, patch = {}) => {
