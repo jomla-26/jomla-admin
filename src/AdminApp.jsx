@@ -1293,7 +1293,8 @@ function ShortageRow({ shortage: sh, onResolved }) {
           <div className="avail-row" style={{ marginTop: 10 }}>
             {Object.entries(SHORTAGE_RESOLUTION_LABELS).map(([k, l]) => (
               <button key={k} className={"avail-btn" + (resolution === k ? " avail-btn-active avail-btn-partial" : "")}
-                onClick={() => setResolution(k)}>{l}</button>
+                aria-pressed={resolution === k}
+                onClick={() => setResolution(k)}>{resolution === k ? "✓ " : ""}{l}</button>
             ))}
           </div>
           <p className="hint">يفترض هذا أن العميل وافق على الحل هاتفيًا أو عبر الدردشة قبل التأكيد.</p>
@@ -7276,6 +7277,12 @@ function Style() {
         color:var(--ink);cursor:pointer;white-space:nowrap;font-family:var(--font-body)}
       .chip-active{background:var(--orange);border-color:var(--orange);color:#fff}
       .chip-add{border-color:var(--orange);color:var(--orange-deep)}
+      /* أزرار اختيار حل النقص (إنقاص / إلغاء / بديل / انتظار): المختار يتلوّن برتقالي مع ✓ */
+      .avail-row{display:flex;gap:8px;flex-wrap:wrap}
+      .avail-btn{border:1.5px solid var(--rule);border-radius:10px;background:var(--paper-raised);padding:9px 16px;
+        font-size:13px;color:var(--ink);cursor:pointer;font-family:var(--font-body);font-weight:600}
+      .avail-btn:hover{border-color:var(--orange)}
+      .avail-btn-active,.avail-btn-active:hover{background:var(--orange);border-color:var(--orange-deep);color:#fff}
       .search-bar{display:flex;align-items:center;gap:8px;border:1px solid var(--rule);border-radius:12px;
         background:var(--paper-raised);padding:10px 14px;color:var(--ink-soft);margin-bottom:16px}
       .search-bar-inline{width:300px;margin-bottom:0}
