@@ -576,8 +576,21 @@ function Sidebar({ can, view, roots, backTo, onNav, onLogout }) {
     { id: "settings", label: "الإعدادات", Icon: Settings },
     { id: "reports", label: "التقارير", Icon: BarChart2 },
     { id: "auditLog", label: "سجل التدقيق", Icon: History },
-    ...(can?.("employees.manage") ? [{ id: "errorLog", label: "سجل الأخطاء", Icon: AlertTriangle }] : []),
+    ...(can?.("system.errors") ? [{ id: "errorLog", label: "سجل الأخطاء", Icon: AlertTriangle }] : []),
   ];
+  const NEED = {
+    orders: ["orders.review", "orders.cancel", "orders.assign_driver", "orders.returns", "orders.reassign_driver"],
+    catalog: ["catalog.manage", "catalog.approve_products", "catalog.delete", "pricing.cost"],
+    accounts: ["accounts.approve", "accounts.sections"],
+    employees: ["employees.manage", "finance.salaries"],
+    delivery: ["orders.assign_driver", "catalog.manage", "orders.delivery_fee_override"],
+    operations: ["assets.manage", "finance.expenses"],
+    settings: ["employees.manage", "catalog.manage", "finance.commission", "finance.transfers", "pricing.cost", "accounts.sections"],
+    reports: ["reports.view", "finance.vouchers", "finance.expenses"],
+    auditLog: ["employees.manage"],
+  };
+  const visible = (id) => !NEED[id] || !can || NEED[id].some((c) => can(c));
+  items.splice(0, items.length, ...items.filter((i) => visible(i.id)));
   return (
     <aside className="sidebar">
       <button className="sidebar-brand" onClick={() => onNav("dashboard")}>
@@ -3087,11 +3100,12 @@ function EmployeePermissionsForm({ employee, onClose }) {
     return null; // بدون استثناء — يعتمد على وضع دوره
   };
 
-  function cycle(code, roleHasIt) {
-    const current = effective(code);
-    // دورة الحالات: بدون استثناء → عكس وضع الدور → إلغاء العكس (رجوع لبدون استثناء)
-    const next = current === null ? !roleHasIt : null;
-    setPending((p) => ({ ...p, [code]: next }));
+  // الصندوق مفعّل = الموظف يملك الصلاحية فعليًا (من دوره أو منح إضافي). التغيير يتحفظ كاستثناء فقط لو خالف وضع الدور.
+  function toggle(code, roleHasIt) {
+    const eff = effective(code);
+    const now = eff === null ? roleHasIt : eff;
+    const want = !now;
+    setPending((p) => ({ ...p, [code]: want === roleHasIt ? null : want }));
   }
 
   const dirty = Object.keys(pending).length > 0;
@@ -3105,26 +3119,22 @@ function EmployeePermissionsForm({ employee, onClose }) {
     <div className="detail-card voucher-form">
       <h2 className="subsection-heading">الصلاحيات الفردية — {employee.name}</h2>
       <p className="hint">
-        هذه استثناءات فوق صلاحيات وظيفته ({data.employee.role_name}). اضغط على أي صلاحية لتبديل حالتها:
-        منح إضافي، سحب، أو الرجوع لوضع الدور الافتراضي.
+        علّم ✔ على الصلاحيات اللي تبيه يملكها (الأساس من وظيفته: {data.employee.role_name}). أي تغيير عن وظيفته يتحفظ كاستثناء خاص بهذا الموظف.
       </p>
 
       <div className="ledger-list" style={{ marginTop: 10, marginBottom: 14 }}>
         {data.permissions.map((p) => {
           const roleHasIt = data.roleGrantedCodes.includes(p.code);
           const state = effective(p.code);
-          const label = state === true ? "ممنوحة إضافيًا لهذا الموظف"
-            : state === false ? "مسحوبة من هذا الموظف"
-            : roleHasIt ? "ممنوحة عبر دوره" : "غير ممنوحة (خارج دوره)";
-          const tone = state === true ? "status-pill-approved"
-            : state === false ? "status-pill-cancelled"
-            : roleHasIt ? "status-pill-approved" : "";
+          const checked = state === null ? roleHasIt : state;
+          const note = state === true && !roleHasIt ? "منح إضافي" : state === false && roleHasIt ? "مسحوبة منه" : "";
           return (
-            <div className="ledger-row" key={p.code} style={{ cursor: "pointer" }}
-              onClick={() => cycle(p.code, roleHasIt)}>
-              <span className="cell-id">{p.description || p.code}</span>
-              <span className={"status-pill " + tone}>{label}</span>
-            </div>
+            <label className="ledger-row" key={p.code} style={{ cursor: "pointer", gap: 10 }}>
+              <input type="checkbox" checked={checked} onChange={() => toggle(p.code, roleHasIt)}
+                style={{ width: 20, height: 20, flex: "none" }} />
+              <span className="cell-id" style={{ flex: 1 }}>{p.description || p.code}</span>
+              {note && <span className="status-pill">{note}</span>}
+            </label>
           );
         })}
       </div>
