@@ -100,6 +100,14 @@ export function guardAuthFailure(status, payload, path = "") {
   }
 }
 
+// لما الـ API يرجّع رمز دخول مؤقت (فتح حساب / اعتماده) نطلعه للمدير في نافذة ليعطيه لصاحب الحساب
+function announceLoginCode(r) {
+  if (r && r.loginCode) {
+    try { window.dispatchEvent(new CustomEvent("jomla-login-code", { detail: { code: r.loginCode, name: r.business_name || r.name, phone: r.phone } })); } catch { /* تجاهل */ }
+  }
+  return r;
+}
+
 async function request(path, { method = "GET", body, params, signal } = {}) {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin);
   if (params) {
@@ -283,7 +291,7 @@ vouchers: (params) => request("/finance/vouchers", { params: { limit: FULL_LIST,
   /* الموظفون */
   employees: (params) => request("/employees", { params: { limit: FULL_LIST, ...params } }),
   employeeRoles: () => request("/employees/roles"),
-  createEmployee: (body) => request("/employees", { method: "POST", body }),
+  createEmployee: (body) => request("/employees", { method: "POST", body }).then(announceLoginCode),
   updateEmployee: (id, body) => request(`/employees/${id}`, { method: "PATCH", body }),
   deleteEmployee: (id) => request(`/employees/${id}`, { method: "DELETE" }),
   employeePermissions: (id) => request(`/employees/${id}/permissions`),
@@ -294,7 +302,7 @@ vouchers: (params) => request("/finance/vouchers", { params: { limit: FULL_LIST,
   /* الحسابات (عملاء وموردون) */
   accounts: (kind, params) => request(`/accounts/${kind}`, { params: { limit: FULL_LIST, ...params } }),
   account: (kind, id) => request(`/accounts/${kind}/${id}`),
-  createAccount: (kind, body) => request(`/accounts/${kind}`, { method: "POST", body }),
+  createAccount: (kind, body) => request(`/accounts/${kind}`, { method: "POST", body }).then(announceLoginCode),
   updateAccount: (kind, id, body) => request(`/accounts/${kind}/${id}`, { method: "PATCH", body }),
   deleteAccount: (kind, id) => request(`/accounts/${kind}/${id}`, { method: "DELETE" }),
   // commissionRate: إجبارية عند اعتماد مورد جديد (يحددها المعتمِد بصلاحية العمولة)
@@ -302,7 +310,7 @@ vouchers: (params) => request("/finance/vouchers", { params: { limit: FULL_LIST,
     request(`/accounts/${kind}/${id}/approve`, {
       method: "POST",
       body: commissionRate === undefined ? { sectionIds } : { sectionIds, commissionRate },
-    }),
+    }).then(announceLoginCode),
   rejectAccount: (kind, id) => request(`/accounts/${kind}/${id}/reject`, { method: "POST" }),
   setAccountSections: (kind, id, sectionIds) =>
     request(`/accounts/${kind}/${id}/sections`, { method: "PATCH", body: { sectionIds } }),

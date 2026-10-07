@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { api } from "./api.js";
 import { useAction, useFetch } from "./hooks.js";
+import { useEffect } from "react";
 
 const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 };
 const card = { background: "var(--surface, #fff)", color: "inherit", borderRadius: 16, padding: 20, width: "100%", maxWidth: 420, textAlign: "right", boxShadow: "0 12px 40px rgba(0,0,0,.35)" };
@@ -95,6 +96,36 @@ export function PasswordRequestsView() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** نافذة تظهر تلقائيًا لما يتفتح حساب أو يتعتمد: الرمز يعطيه المدير لصاحب الحساب (بدل SMS) */
+export function LoginCodeListener() {
+  const [info, setInfo] = useState(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    const h = (e) => { setInfo(e.detail); setCopied(false); };
+    window.addEventListener("jomla-login-code", h);
+    return () => window.removeEventListener("jomla-login-code", h);
+  }, []);
+  if (!info) return null;
+  return (
+    <div style={overlay} onClick={() => setInfo(null)}>
+      <div style={card} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0 }}>تم فتح الحساب: {info.name}</h3>
+        <p className="hint">أعطِ صاحب الحساب ({info.phone}) هذا الرمز. يدخل به من تطبيقه بالضغط على «عندي رمز دخول من الإدارة»، ويحط كلمة مروره. بدون رسائل SMS.</p>
+        <div style={{ font: "700 34px/1.4 monospace", letterSpacing: 6, direction: "ltr", textAlign: "center", padding: 14, borderRadius: 12, background: "rgba(128,128,128,.14)", userSelect: "all" }}>
+          {info.code}
+        </div>
+        <p className="hint">صالح 7 أيام ويُستعمل مرة واحدة. يظهر هنا مرة واحدة، ولو ضاع تقدر تصدر رمز جديد من زر «إصدار رمز دخول».</p>
+        <div className="decide-row">
+          <button className="link-btn" onClick={() => { try { navigator.clipboard?.writeText(info.code); setCopied(true); } catch { /* تجاهل */ } }}>
+            {copied ? "تم النسخ" : "نسخ الرمز"}
+          </button>
+          <button className="btn-primary" onClick={() => setInfo(null)}>تم</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { PasswordSteps, SetPasswordView, SecurityPanel } from "./PasswordPanels.jsx";
-import { IssueCodeButton, PasswordRequestsView } from "./PasswordAdmin.jsx";
+import { IssueCodeButton, PasswordRequestsView, LoginCodeListener } from "./PasswordAdmin.jsx";
 import { pushState, enablePush, disablePush } from "./push.js";
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -235,6 +235,7 @@ function JomlaAdminAppInner() {
 
   return (
     <Shell wide>
+      <LoginCodeListener />
       <div className="app-shell">
         <Sidebar can={can} view={view} roots={ROOTS} backTo={backTo} onNav={navRoot} onLogout={logout} />
         <div className="app-content">
