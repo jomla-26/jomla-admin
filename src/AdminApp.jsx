@@ -7696,7 +7696,7 @@ function Style() {
         flex-direction:column;gap:2px}
       .notif-row-unread{background:var(--orange-soft)}
       .notif-title{font-weight:700;font-size:12.5px}
-      .notif-body{font-size:12px;color:var(--ink-soft)}
+      .notif-body{font-size:12px;color:var(--ink-soft);white-space:pre-line}
       .notif-time{font-size:10.5px;color:var(--ink-soft)}
 
       .app-content{flex:1;display:flex;flex-direction:column;min-width:0}
