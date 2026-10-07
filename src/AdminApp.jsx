@@ -583,9 +583,9 @@ function Sidebar({ can, view, roots, backTo, onNav, onLogout }) {
     catalog: ["catalog.manage", "catalog.approve_products", "catalog.delete", "pricing.cost"],
     accounts: ["accounts.approve", "accounts.sections"],
     employees: ["employees.manage", "finance.salaries"],
-    delivery: ["orders.assign_driver", "catalog.manage", "orders.delivery_fee_override"],
+    delivery: ["orders.assign_driver", "delivery.manage", "orders.delivery_fee_override"],
     operations: ["assets.manage", "finance.expenses"],
-    settings: ["employees.manage", "catalog.manage", "finance.commission", "finance.transfers", "pricing.cost", "accounts.sections"],
+    settings: ["employees.manage", "catalog.manage", "delivery.manage", "banners.manage", "finance.commission", "finance.transfers", "pricing.cost", "accounts.sections"],
     reports: ["reports.view", "finance.vouchers", "finance.expenses"],
     auditLog: ["employees.manage"],
   };
@@ -4515,7 +4515,7 @@ function BannersSettings({ can }) {
           {!data?.length && <Empty icon={ImageIcon} text="لا توجد بانرات بعد" />}
         </div>
       )}
-      {can("catalog.manage") && (
+      {can("banners.manage") && (
         showAdd
           ? <AddBannerForm mainSections={mainSections} onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); reload(); }} />
           : <button className="btn-primary" style={{ maxWidth: 220 }} onClick={() => setShowAdd(true)}>
@@ -4566,7 +4566,7 @@ function BannerRow({ banner, can, onChanged, mainSections }) {
             : <span className="status-pill">عام — لكل الأقسام</span>}
         </div>
       </div>
-      {can("catalog.manage") && (
+      {can("banners.manage") && (
         <div style={{ display: "flex", gap: 6, flex: "none", flexWrap: "wrap" }}>
           <button className="invoice-action-btn"
             onClick={() => { setDraftIds(Array.isArray(banner.section_ids) ? banner.section_ids : []); setEditingSections((v) => !v); }}>
@@ -4584,7 +4584,7 @@ function BannerRow({ banner, can, onChanged, mainSections }) {
           )}
         </div>
       )}
-      {editingSections && can("catalog.manage") && (
+      {editingSections && can("banners.manage") && (
         <div style={{ width: "100%", paddingTop: 8 }}>
           <label className="field-label">الأقسام المستهدفة</label>
           <BannerSectionPicker mainSections={mainSections} value={draftIds} onChange={setDraftIds} />
@@ -4894,7 +4894,7 @@ function ZonesSettings({ can }) {
 
   return (
     <>
-      {can("catalog.manage") && (
+      {can("delivery.manage") && (
         showAdd ? (
           <div className="detail-card voucher-form">
             <h2 className="subsection-heading">منطقة توصيل جديدة</h2>
@@ -4946,7 +4946,7 @@ function ZoneRow({ zone: z, can, onDone }) {
       </td>
       <td><span className={"status-pill" + (z.is_active ? " status-pill-approved" : "")}>{z.is_active ? "مفعّلة" : "موقوفة"}</span></td>
       <td>
-        {can("catalog.manage") && (
+        {can("delivery.manage") && (
           editing ? (
             <>
               <button className="invoice-action-btn" disabled={save.pending}
@@ -4980,7 +4980,7 @@ function VehicleTypesSettings({ can }) {
 
   return (
     <>
-      {can("catalog.manage") && (
+      {can("delivery.manage") && (
         showAdd ? (
           <div className="detail-card voucher-form">
             <h2 className="subsection-heading">نوع سيارة جديد</h2>
