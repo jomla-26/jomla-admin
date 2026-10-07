@@ -1,8 +1,10 @@
+import { PasswordSteps, SetPasswordView, SecurityPanel } from "./PasswordPanels.jsx";
+import { IssueCodeButton, PasswordRequestsView } from "./PasswordAdmin.jsx";
 import { pushState, enablePush, disablePush } from "./push.js";
 import React, { useState, useEffect, useRef } from "react";
 import {
   ArrowRight, Home, ClipboardCheck, Users, BarChart2, Truck, Wallet,
-  Check, X, Package, Store, AlertTriangle, Search, Plus, MapPin,
+  Check, X, Package, Store, AlertTriangle, KeyRound, ShieldCheck, Search, Plus, MapPin,
   Printer, FileText, Loader2, Wrench, Settings, Star, MessageCircle,
   RotateCcw, Fuel, Send, History, Bell, Image as ImageIcon, Download,
 } from "lucide-react";
@@ -119,7 +121,7 @@ class ErrorBoundary extends React.Component {
 }
 
 /* ---- الرابط ↔ الشاشة: #/view?key=value ---- */
-const KNOWN_VIEWS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog", "errorLog",
+const KNOWN_VIEWS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog", "errorLog", "passwordRequests", "security",
   "orderDetail", "customerLedger", "supplierLedger", "itemDetail", "supplierStockLog", "driverLedger"];
 const SUB_PARENT = { orderDetail: "orders", customerLedger: "reports", supplierLedger: "reports", itemDetail: "reports", supplierStockLog: "reports", driverLedger: "reports" };
 function parseHash(hash) {
@@ -146,7 +148,7 @@ function stackFromHash() {
 }
 
 function JomlaAdminAppInner() {
-  const { actor, loading, requestOtp, verifyOtp, logout, can } = useSession("employee");
+  const { actor, loading, requestOtp, verifyOtp, logout, can, profile, passwordLogin, codeLogin, recoverLogin, adoptSession, reloadProfile } = useSession("employee");
   // مكدّس تنقّل كامل (زي تاريخ المتصفح) بدل خريطة "رجوع" ثابتة — كل عنصر فيه
   // شاشة (view) + بيانات مختارة (sel) في تلك اللحظة بالضبط، عشان سهم الرجوع
   // يرجّعك لنفس الشاشة والتبويب اللي كنت فيه، مش يبدأ من الأول دايمًا
@@ -202,6 +204,7 @@ function JomlaAdminAppInner() {
       const n = e.detail || {};
       if (n.order_id) setStack([{ view: "orders", sel: {} }, { view: "orderDetail", sel: { orderId: n.order_id } }]);
       else if (String(n.title || "").includes("خطأ جديد في السيرفر")) setStack([{ view: "errorLog", sel: {} }]);
+      else if (String(n.title || "").includes("نسيان كلمة المرور")) setStack([{ view: "passwordRequests", sel: {} }]);
       else if (["account.new_registration", "supplier.decision"].includes(n.template_code)) setStack([{ view: "accounts", sel: {} }]);
     };
     window.addEventListener("jomla-notify-nav", h);
@@ -209,14 +212,15 @@ function JomlaAdminAppInner() {
   }, []);
 
   if (loading) return <Shell><Centered><Loader2 className="spin" size={26} /><p>جارٍ التحميل…</p></Centered></Shell>;
-  if (!actor) return <Shell><LoginView onRequestOtp={requestOtp} onVerify={verifyOtp} /></Shell>;
+  if (!actor) return <Shell><LoginView onRequestOtp={requestOtp} onVerify={verifyOtp} onPasswordLogin={passwordLogin} onCodeLogin={codeLogin} onRecover={recoverLogin} onAdopt={adoptSession} /></Shell>;
+  if (profile?.needsPassword) return <Shell><SetPasswordView onSaved={reloadProfile} onLogout={logout} /></Shell>;
 
-  const ROOTS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog", "errorLog"];
+  const ROOTS = ["dashboard", "orders", "catalog", "accounts", "employees", "delivery", "operations", "settings", "reports", "auditLog", "errorLog", "passwordRequests", "security"];
   const TITLES = {
     dashboard: "نظرة عامة", orders: "الطلبيات", catalog: "إدارة الأصناف", accounts: "الحسابات",
     employees: "الموظفون والرواتب", delivery: "التوصيل والمندوبين",
     operations: "الأصول والمتابعة", settings: "الإعدادات", reports: "التقارير العامة",
-    auditLog: "سجل التدقيق", errorLog: "سجل الأخطاء",
+    auditLog: "سجل التدقيق", errorLog: "سجل الأخطاء", passwordRequests: "طلبات كلمة المرور", security: "كلمة المرور والأمان",
     orderDetail: "تفاصيل الطلبية", customerLedger: "كشف حساب العميل",
     supplierLedger: "كشف حساب المورد", itemDetail: "بطاقة الصنف",
     supplierStockLog: "حركة أصناف المورد", driverLedger: "كشف حركة المندوب",
@@ -255,6 +259,8 @@ function JomlaAdminAppInner() {
             {view === "operations" && <OperationsView can={can} />}
             {view === "settings" && <SettingsView can={can} />}
             {view === "reports" && <ReportsView onGo={go} sel={sel} onPatch={patchSel} />}
+            {view === "passwordRequests" && <ErrorBoundary><PasswordRequestsView /></ErrorBoundary>}
+            {view === "security" && <SecurityPanel showRecovery onLoggedOut={logout} />}
             {view === "errorLog" && <ErrorBoundary><ErrorLogView /></ErrorBoundary>}
             {view === "auditLog" && <ErrorBoundary><AuditLogView can={can} /></ErrorBoundary>}
             {view === "customerLedger" && <LedgerView kind="customer" id={sel.accountId} name={sel.partyName} />}
@@ -395,8 +401,8 @@ function phoneError(raw) {
   return "";
 }
 
-function LoginView({ onRequestOtp, onVerify }) {
-  const [step, setStep] = useState("phone");
+function LoginView({ onRequestOtp, onVerify, onPasswordLogin, onCodeLogin, onRecover, onAdopt }) {
+  const [step, setStep] = useState("password");
   const [phone, setPhone] = useState("");
   const [phoneErr, setPhoneErr] = useState("");
   const lastTried = useRef("");
@@ -461,7 +467,12 @@ function LoginView({ onRequestOtp, onVerify }) {
       <LogoIntro width={250} />
       <p className="login-sub">لوحة الإدارة — منصة جملة لتجارة الجملة</p>
 
-      {step === "phone" ? (
+      {["password", "forgot", "code", "recover"].includes(step) ? (
+        <PasswordSteps accountType="employee" step={step} setStep={setStep} phone={phone} setPhone={setPhone}
+          phoneError={phoneError} normalizePhone={normalizeLibyanPhone} phoneLabel="رقم حساب الإدارة"
+          onPasswordLogin={onPasswordLogin} onCodeLogin={onCodeLogin} onRecover={onRecover} onAdopt={onAdopt}
+          allowRecovery={true} />
+      ) : step === "phone" ? (
         <div className="login-card">
           <label className="field-label">رقم حساب الإدارة</label>
           <input className="field-input" placeholder="09XXXXXXXX" value={phone} dir="ltr"
@@ -473,6 +484,7 @@ function LoginView({ onRequestOtp, onVerify }) {
             {send.pending ? "جارٍ الإرسال…" : "إرسال رمز التحقق"}
           </button>
           <p className="login-note">{COMPANY.address}</p>
+          <button className="link-btn" onClick={() => setStep("password")}>عندي كلمة مرور — ادخل بها</button>
         </div>
       ) : (
         <div className="login-card">
@@ -600,6 +612,8 @@ function Sidebar({ can, view, roots, backTo, onNav, onLogout }) {
     { id: "settings", label: "الإعدادات", Icon: Settings },
     { id: "reports", label: "التقارير", Icon: BarChart2 },
     { id: "auditLog", label: "سجل التدقيق", Icon: History },
+    ...(can?.("accounts.issue_code") ? [{ id: "passwordRequests", label: "طلبات كلمة المرور", Icon: KeyRound }] : []),
+    { id: "security", label: "كلمة المرور والأمان", Icon: ShieldCheck },
     ...(can?.("system.errors") ? [{ id: "errorLog", label: "سجل الأخطاء", Icon: AlertTriangle }] : []),
   ];
   const NEED = {
@@ -2346,6 +2360,9 @@ function AccountsView({ can }) {
                         {can("accounts.approve") && (
                           <DeleteAccountButton kind={kind} account={a} onDone={reload} />
                         )}
+                        {can("accounts.issue_code") && (
+                          <IssueCodeButton accountType={kind} id={a.id} name={a.business_name || a.name || a.phone} />
+                        )}
                         {can("accounts.approve") && (
                           <button className="invoice-action-btn"
                             onClick={() => setActivityLogId(activityLogId === a.id ? null : a.id)}>
@@ -2823,6 +2840,9 @@ function EmployeesView({ can, onGo }) {
                       )}
                       {can("employees.manage") && e.id !== session.actor?.id && (
                         <ToggleEmployeeButton employee={e} onDone={refresh} />
+                      )}
+                      {can("accounts.issue_code") && e.id !== session.actor?.id && (
+                        <IssueCodeButton accountType="employee" id={e.id} name={e.name} />
                       )}
                       {can("finance.vouchers") && (
                         <button className="invoice-action-btn"
