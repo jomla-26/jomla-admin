@@ -3889,27 +3889,28 @@ function InventoryExportPanel({ shown, selected, onClearSelected, supplierName, 
     else if (mode === "selected") list = selectedList;
     else list = shown;
     if (!list?.length) throw new Error("ما في أصناف للتصدير بالاختيار هذا");
+    // نفس ترتيب أعمدة نموذج الاستيراد بالضبط (القسم، اسم الصنف، وحدة البيع، السعر، الكمية، رقم الصنف)
+    // عشان الملف يصلح يترفع من جديد بعد تعديل الكميات والأسعار. المورد والحالة في الآخر (للمعلومة فقط، الاستيراد يتجاهلهم).
     const rows = list.flatMap((p) => {
-      const base = {
-        "المورد": p.supplier_name, "القسم": p.section_name, "اسم الصنف": p.name,
-      };
       const state = p.is_active === false ? "موقوف" : p.approval_status === "pending" ? "بانتظار الموافقة" : "نشط";
       if (p.variants?.length) {
         return p.variants.map((v) => ({
-          ...base, "النوع": v.label, "الكود": v.sku || "", "وحدة البيع": p.unit,
-          "السعر (د.ل)": Number(v.price), "الكمية": Number(v.stockQty), "الحالة": state,
+          "القسم": p.section_name, "اسم الصنف": `${p.name} - ${v.label}`, "وحدة البيع": p.unit,
+          "السعر (د.ل)": Number(v.price), "الكمية المتوفرة": Number(v.stockQty),
+          "رقم الصنف عندك (إجباري)": v.sku || "", "المورد": p.supplier_name, "الحالة": state,
         }));
       }
       return [{
-        ...base, "النوع": "", "الكود": p.supplier_sku || "", "وحدة البيع": p.unit,
-        "السعر (د.ل)": Number(p.base_price), "الكمية": Number(p.stock_qty), "الحالة": state,
+        "القسم": p.section_name, "اسم الصنف": p.name, "وحدة البيع": p.unit,
+        "السعر (د.ل)": Number(p.base_price), "الكمية المتوفرة": Number(p.stock_qty),
+        "رقم الصنف عندك (إجباري)": p.supplier_sku || "", "المورد": p.supplier_name, "الحالة": state,
       }];
     });
     const XLSX = await import("xlsx");
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 20 }, { wch: 18 }, { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 14 }];
+    ws["!cols"] = [{ wch: 18 }, { wch: 30 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 26 }, { wch: 20 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "المخزون");
+    XLSX.utils.book_append_sheet(wb, ws, "الأصناف");
     XLSX.writeFile(wb, `مخزون-${new Date().toISOString().slice(0, 10)}.xlsx`);
     return rows.length;
   });
