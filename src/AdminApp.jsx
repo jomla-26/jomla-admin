@@ -3608,7 +3608,7 @@ function CatalogProductsPane({ can, onChanged }) {
           <button className={"chip" + (groupBy === "supplier" ? " chip-active" : "")} onClick={() => setGroupBy("supplier")}>ترتيب حسب المورد</button>
           <button className={"chip" + (groupBy === "section" ? " chip-active" : "")} onClick={() => setGroupBy("section")}>ترتيب حسب القسم</button>
         </div>
-        {(can("catalog.manage") || can("reports.view")) && (
+        {can("inventory.export") && (
           <button className="chip" onClick={() => setShowExport((v) => !v)}>
             <Download size={14} style={{ verticalAlign: "-2px", marginLeft: 4 }} /> {showExport ? "إغلاق التصدير" : "تصدير المخزون إلى Excel"}
           </button>
@@ -3949,7 +3949,7 @@ function AdminVariantsManager({ product }) {
       {loading ? <Spinner /> : error ? <ErrorState message={error} onRetry={reload} /> : (
         !data?.length ? <p className="cell-muted">لا توجد أنواع بعد</p> : (
           <table className="data-table" style={{ marginTop: 0 }}>
-            <thead><tr><th>النوع</th><th>الكود</th><th>السعر</th><th>الكمية</th><th>الحالة</th><th></th></tr></thead>
+            <thead><tr><th>الصورة</th><th>النوع</th><th>الكود</th><th>السعر</th><th>الكمية</th><th>الحالة</th><th></th></tr></thead>
             <tbody>{data.map((v) => <AdminVariantRow key={v.id} variant={v} onDone={reload} />)}</tbody>
           </table>
         )
@@ -3972,6 +3972,20 @@ function AdminVariantRow({ variant: v, onDone }) {
   const [adjusting, setAdjusting] = useState(false);
   const [delta, setDelta] = useState("");
   const [reason, setReason] = useState("");
+  const imgRef = useRef(null);
+  const [imgBusy, setImgBusy] = useState(false);
+  const [imgErr, setImgErr] = useState("");
+  function pickImg(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImgBusy(true); setImgErr("");
+    api.uploadImage(file)
+      .then((res) => api.updateProductVariant(v.id, { imageUrl: res.url }))
+      .then(() => onDone())
+      .catch((err) => setImgErr(err?.message || "تعذّر رفع الصورة"))
+      .finally(() => setImgBusy(false));
+  }
   const save = useAction(() => api.updateProductVariant(v.id, {
     label: label.trim() !== v.label ? label.trim() : undefined,
     sku: sku.trim() && sku.trim() !== (v.sku || "") ? sku.trim() : undefined,
@@ -3986,6 +4000,17 @@ function AdminVariantRow({ variant: v, onDone }) {
   return (
     <>
       <tr>
+        <td>
+          <input ref={imgRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickImg} />
+          <button type="button" className="link-btn" disabled={imgBusy} onClick={() => imgRef.current?.click()} aria-label="تغيير صورة النوع"
+            style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {v.image_url
+              ? <img src={v.image_url} alt="" style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 8 }} />
+              : <span style={{ width: 38, height: 38, borderRadius: 8, background: "var(--paper)", display: "inline-block" }} />}
+            <span style={{ fontSize: 12 }}>{imgBusy ? "…" : v.image_url ? "تغيير" : "إضافة"}</span>
+          </button>
+          {imgErr && <span className="field-error">{imgErr}</span>}
+        </td>
         <td><input className="field-input" style={{ marginBottom: 0, minWidth: 90 }} value={label} onChange={(e) => setLabel(e.target.value)} /></td>
         <td><input className="field-input" style={{ marginBottom: 0, minWidth: 80 }} dir="ltr" placeholder="الكود" value={sku} onChange={(e) => setSku(e.target.value)} /></td>
         <td><input type="number" min="0" step="0.05" className="qty-input" style={{ width: 80 }} value={price} onChange={(e) => setPrice(e.target.value)} /></td>
@@ -4011,7 +4036,7 @@ function AdminVariantRow({ variant: v, onDone }) {
       </tr>
       {adjusting && (
         <tr>
-          <td colSpan={6} style={{ background: "var(--paper)" }}>
+          <td colSpan={7} style={{ background: "var(--paper)" }}>
             <p className="hint" style={{ margin: "4px 0" }}>الكمية الحالية {v.stock_qty}. اكتب الزيادة بـ (+) أو الخصم بـ (−) مع السبب، وتتسجل في السجل باسمك.</p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <input className="field-input" style={{ marginBottom: 0, maxWidth: 120 }} type="number" placeholder="مثال: 5 أو -3"
@@ -4028,7 +4053,7 @@ function AdminVariantRow({ variant: v, onDone }) {
         </tr>
       )}
       {(save.error || toggle.error || remove.error) && (
-        <tr><td colSpan={6}><p className="field-error">{save.error || toggle.error || remove.error}</p></td></tr>
+        <tr><td colSpan={7}><p className="field-error">{save.error || toggle.error || remove.error}</p></td></tr>
       )}
     </>
   );
