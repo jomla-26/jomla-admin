@@ -7106,7 +7106,7 @@ function buildVoucherHTML(v, balance, partyType) {
   <div class="row"><span>الطرف</span><span>${esc(v.party_name)}</span></div>
   ${balanceLabel ? `<div class="row"><span>الرصيد الحالي</span><span>${balanceLabel}</span></div>` : ""}
   <div class="row"><span>طريقة الدفع</span><span>${methodLabel}</span></div>
-  ${v.note ? `<div class="row"><span>ملاحظة</span><span>${esc(v.note)}</span></div>` : ""}
+  ${v.note ? `<div class="row"><span>ملاحظة</span><span style="white-space:pre-line;text-align:left;max-width:70%">${esc(v.note)}</span></div>` : ""}
   <p class="words">المبلغ كتابةً: ${amountInWords(v.amount)}</p>
   <div class="row total"><span>المبلغ</span><span>${Number(v.amount).toFixed(2)} د.ل</span></div>
 </div>
