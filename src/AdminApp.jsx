@@ -3407,7 +3407,7 @@ function CatalogManagerView({ can }) {
         <div className="chip-row" style={{ marginBottom: 12 }}>
           <button className={"chip" + (tab === "all" ? " chip-active" : "")} onClick={() => setTab("all")}>كل الأصناف</button>
           {canManage && (
-            <button className={"chip" + (tab === "import" ? " chip-active" : "")} onClick={() => setTab("import")}>استيراد من إكسل</button>
+            <button className={"chip" + (tab === "import" ? " chip-active" : "")} onClick={() => setTab("import")}>تحديث الأصناف من إكسل</button>
           )}
           {canManage && (
             <button className={"chip" + (tab === "searches" ? " chip-active" : "")} onClick={() => setTab("searches")}>كشف البحث</button>
@@ -3440,7 +3440,7 @@ function CatalogExcelImportTab({ onImported }) {
     const name = (suppliers.data ?? []).find((x) => x.id === supplierId)?.business_name;
     return (
       <div>
-        <p className="hint">الاستيراد للمورد: <b>{name}</b></p>
+        <p className="hint">التحديث للمورد: <b>{name}</b></p>
         <AdminImportProductsView key={supplierId} supplierId={supplierId} sections={sections.data ?? []}
           onClose={() => setStarted(false)}
           onImported={() => { setStarted(false); onImported && onImported(); }} />
@@ -3449,7 +3449,7 @@ function CatalogExcelImportTab({ onImported }) {
   }
   return (
     <div className="detail-card" style={{ maxWidth: 640 }}>
-      <h2 className="subsection-heading">استيراد أصناف من إكسل</h2>
+      <h2 className="subsection-heading">تحديث الأصناف من إكسل</h2>
       <p className="hint">اختر المورد اللي الأصناف تابعة له، وبعدها ارفع ملف الإكسل. الصنف الموجود (برقم الصنف عند المورد) يتحدّث، والجديد يطلب تأكيدك قبل ما ينضاف.</p>
       <label className="field-label">المورد</label>
       {suppliers.loading ? <Spinner /> : suppliers.error ? <ErrorState message={suppliers.error} onRetry={suppliers.reload} /> : (
@@ -3469,7 +3469,7 @@ function CatalogExcelImportTab({ onImported }) {
           ws["!cols"] = [{ wch: 16 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 24 }];
           const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, ws, "الأصناف");
-          XLSX.writeFile(wb, "نموذج-استيراد-الأصناف.xlsx");
+          XLSX.writeFile(wb, "نموذج-تحديث-الأصناف.xlsx");
         }}>⬇️ تحميل نموذج إكسل فارغ</button>
       </div>
     </div>
@@ -5635,7 +5635,7 @@ function StockVouchersForSupplier({ supplierId }) {
           − فاتورة خصم
         </button>
         <button className="btn-ghost" style={{ marginBottom: 0 }} onClick={() => setShowImport(true)}>
-          استيراد من إكسل
+          تحديث الأصناف من إكسل
         </button>
       </div>
 
@@ -5929,7 +5929,7 @@ function AdminImportProductsView({ supplierId, sections, onClose, onImported }) 
 
         {result.needsConfirmation.length === 0 ? (
           <>
-            <p className="hint">لا توجد أصناف جديدة تحتاج تأكيد — الاستيراد اكتمل.</p>
+            <p className="hint">لا توجد أصناف جديدة تحتاج تأكيد — التحديث اكتمل.</p>
             <button className="btn-primary" onClick={onImported}>تم</button>
           </>
         ) : (
@@ -5993,7 +5993,7 @@ function AdminImportProductsView({ supplierId, sections, onClose, onImported }) 
           {submit.error && <p className="field-error">{submit.error}</p>}
           <button className="btn-primary" disabled={submit.pending || !withSkuRows.length}
             onClick={() => submit.run().then(handleFirstResult).catch(() => {})}>
-            {submit.pending ? "جارٍ المعالجة…" : `متابعة الاستيراد (${withSkuRows.length} صف)`}
+            {submit.pending ? "جارٍ المعالجة…" : `متابعة التحديث (${withSkuRows.length} صف)`}
           </button>
         </>
       )}
