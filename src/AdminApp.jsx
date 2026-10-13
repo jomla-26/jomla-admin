@@ -7652,7 +7652,7 @@ function AuditLogView({ can }) {
 function Style() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&family=Tajawal:wght@400;500;700&display=swap');
+      
       .jomla-root{--ink:#181d2a;--ink-soft:#6b7280;--paper:#f4f5f9;--paper-raised:#fff;
         --orange:#ff6a1a;--orange-deep:#e85d0f;--orange-soft:#fff1e8;--rule:#ecedf2;
         --success:#16a34a;--success-soft:#e8f8ee;--amber:#d97706;--amber-soft:#fef3e2;
