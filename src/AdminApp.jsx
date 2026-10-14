@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { api, session } from "./api.js";
 import { useSession, useFetch, useAction } from "./hooks.js";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import LogoIntro from "./LogoIntro.jsx";
@@ -3345,6 +3345,84 @@ function PaySalaryForm({ employees, onClose, onDone }) {
 /* ------------------------ التوصيل ------------------------ */
 
 function DeliveryView({ can }) {
+  const [sub, setSub] = useState("cash");
+  return (
+    <div>
+      <div className="chip-row" style={{ margin: "0 0 12px" }}>
+        <button className={"chip" + (sub === "cash" ? " chip-active" : "")} onClick={() => setSub("cash")}>المناديب والتحصيل</button>
+        <button className={"chip" + (sub === "live" ? " chip-active" : "")} onClick={() => setSub("live")}>🚚 المناديب الآن (خريطة مباشرة)</button>
+      </div>
+      {sub === "live" ? <LiveDriversView /> : <DriversCashView can={can} />}
+    </div>
+  );
+}
+
+const liveDriverIcon = L.divIcon({
+  className: "",
+  html: '<div style="font-size:20px;background:#ff6a1a;border:3px solid #fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.35)">🚚</div>',
+  iconSize: [36, 36], iconAnchor: [18, 18],
+});
+
+function FitPoints({ points }) {
+  const map = useMap();
+  const key = points.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join("|");
+  useEffect(() => {
+    if (points.length > 1) map.fitBounds(points, { padding: [40, 40], maxZoom: 15 });
+    else if (points.length === 1) map.setView(points[0], 14);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
+// المناديب اللي عندهم طلبيات "في الطريق" الآن ومواقعهم المباشرة (تتحدث كل 15 ثانية)
+function LiveDriversView() {
+  const { data, loading, error, reload } = useFetch((s) => api.trackingDrivers(s), []);
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === "visible") reload(); }, 15000);
+    return () => clearInterval(t);
+  }, [reload]);
+  if (loading && !data) return <Spinner />;
+  if (error && !data) return <ErrorState message={error} onRetry={reload} />;
+  const drivers = data ?? [];
+  const located = drivers.filter((d) => d.location);
+  const points = located.map((d) => [d.location.lat, d.location.lng]);
+  const ago = (s) => (s < 45 ? "الآن" : `قبل ${Math.max(1, Math.round(s / 60))} د`);
+  return (
+    <div className="screen">
+      <p className="hint">يظهر هنا المناديب اللي عندهم طلبية «في الطريق» فقط. الموقع يتحدث كل ~20 ثانية طالما تطبيق المندوب مفتوح.</p>
+      {!drivers.length ? <Empty icon={Truck} text="ما فيه مناديب في الطريق الآن" /> : (
+        <>
+          {located.length > 0 && (
+            <div style={{ height: 420, borderRadius: 14, overflow: "hidden", marginBottom: 14 }}>
+              <MapContainer center={points[0]} zoom={13} style={{ height: "100%", width: "100%" }}>
+                <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                {located.map((d) => (
+                  <Marker key={d.driverId} position={[d.location.lat, d.location.lng]} icon={liveDriverIcon}>
+                    <Popup><b>{d.name}</b><br />{d.orders.map((o) => o.orderNumber).join("، ")}<br />{ago(d.location.ageSec)}</Popup>
+                  </Marker>
+                ))}
+                <FitPoints points={points} />
+              </MapContainer>
+            </div>
+          )}
+          <table className="data-table">
+            <thead><tr><th>المندوب</th><th>الهاتف</th><th>طلبيات في الطريق</th><th>آخر موقع</th></tr></thead>
+            <tbody>{drivers.map((d) => (
+              <tr key={d.driverId}>
+                <td className="cell-id">{d.name}</td>
+                <td dir="ltr">{d.phone}</td>
+                <td>{d.orders.map((o) => `${o.orderNumber} (${o.customer})`).join("، ")}</td>
+                <td>{d.location ? <span className="status-pill status-pill-approved">{ago(d.location.ageSec)}</span>
+                  : <span className="status-pill">لا يوجد موقع (التطبيق مقفول؟)</span>}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DriversCashView({ can }) {
   const { data, loading, error, reload } = useFetch((s) => api.driversCash(s), []);
   const settle = useAction((id, amt) => api.settleDriver(id, amt));
 
@@ -3401,6 +3479,8 @@ function CatalogManagerView({ can }) {
     []
   );
   const pendingCount = pending.data?.length ?? 0;
+  const lowStock = useFetch((signal) => api.lowStock({}, signal), []);
+  const lowCount = lowStock.data?.items?.length ?? 0;
   return (
     <div className="screen">
       {(canApprove || canManage) && (
@@ -3408,6 +3488,12 @@ function CatalogManagerView({ can }) {
           <button className={"chip" + (tab === "all" ? " chip-active" : "")} onClick={() => setTab("all")}>كل الأصناف</button>
           {canManage && (
             <button className={"chip" + (tab === "import" ? " chip-active" : "")} onClick={() => setTab("import")}>تحديث الأصناف من إكسل</button>
+          )}
+          {canManage && (
+            <button className={"chip" + (tab === "low" ? " chip-active" : "")} onClick={() => { lowStock.reload(); setTab("low"); }}
+              style={lowCount > 0 && tab !== "low" ? { borderColor: "var(--orange, #f97316)" } : undefined}>
+              نواقص المخزون{lowCount > 0 ? ` (${lowCount})` : ""}
+            </button>
           )}
           {canManage && (
             <button className={"chip" + (tab === "searches" ? " chip-active" : "")} onClick={() => setTab("searches")}>كشف البحث</button>
@@ -3422,9 +3508,40 @@ function CatalogManagerView({ can }) {
         ? <PendingProductsSettings onChanged={pending.reload} />
         : tab === "import" && canManage
         ? <CatalogExcelImportTab onImported={pending.reload} />
+        : tab === "low" && canManage
+        ? <LowStockView data={lowStock.data} loading={lowStock.loading} error={lowStock.error} onRetry={lowStock.reload} />
         : tab === "searches" && canManage
         ? <SearchLogView />
         : <CatalogProductsPane can={can} onChanged={pending.reload} />}
+    </div>
+  );
+}
+
+/* نواقص المخزون: كل الموردين، مجمّعة حسب المورد (نفدت أولًا) */
+function LowStockView({ data, loading, error, onRetry }) {
+  if (loading) return <Spinner />;
+  if (error) return <ErrorState message={error} onRetry={onRetry} />;
+  const items = data?.items ?? [];
+  if (!items.length) return <p className="hint">ما فيه نواقص حاليًا — كل الأصناف كميتها {data?.limit ?? 10} أو أكثر.</p>;
+  const groups = [...items.reduce((m, i) => m.set(i.supplier_id, { name: i.supplier_name, rows: [...(m.get(i.supplier_id)?.rows ?? []), i] }), new Map()).values()];
+  return (
+    <div>
+      <p className="hint">الأصناف اللي نفدت أو كميتها أقل من {data?.limit ?? 10}. المورد ينبَّه تلقائيًا داخل تطبيقه.</p>
+      {groups.map((g) => (
+        <div key={g.name} style={{ marginBottom: 16 }}>
+          <h3 className="subsection-heading">{g.name} ({g.rows.length})</h3>
+          <table className="data-table" style={{ marginTop: 0 }}>
+            <thead><tr><th>الصنف</th><th>النوع</th><th>الرقم</th><th>الكمية</th></tr></thead>
+            <tbody>{g.rows.map((i) => (
+              <tr key={i.item_id}>
+                <td>{i.name}</td><td>{i.label || "—"}</td><td dir="ltr">{i.sku || "—"}</td>
+                <td><span className="status-pill" style={Number(i.stock_qty) <= 0 ? { background: "#fee2e2", color: "#b91c1c" } : { background: "#ffedd5", color: "#c2410c" }}>
+                  {Number(i.stock_qty) <= 0 ? "نفد" : `${Number(i.stock_qty)} ${i.unit}`}</span></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ))}
     </div>
   );
 }
